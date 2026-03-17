@@ -1,0 +1,13 @@
+---------------------------------Processing curves with trace t=8, order=162, for l=3, v_l=1, D_K=-68, f_pi=3, D_K=-68 D_K_l=1, (l | f_pi) = True, roots=[6*z2 + 6]
+f_E: 3, f_pi/f_E: 1, rank=1, j=10*z2 + 2, height=0
+f_E: 1, f_pi/f_E: 3, rank=2, j=6*z2 + 6, height=1
+f_E: 3, f_pi/f_E: 1, rank=1, j=10*z2 + 4, height=0
+f_E: 3, f_pi/f_E: 1, rank=1, j=5*z2 + 12, height=0
+f_E: 3, f_pi/f_E: 1, rank=1, j=3*z2 + 12, height=0
+f_E: 3, f_pi/f_E: 1, rank=1, j=3*z2 + 1, height=0
+f_E: 1, f_pi/f_E: 3, rank=2, j=8*z2 + 3, height=1
+f_E: 3, f_pi/f_E: 1, rank=1, j=8*z2 + 4, height=0
+f_E: 3, f_pi/f_E: 1, rank=1, j=10*z2 + 6, height=0
+f_E: 1, f_pi/f_E: 3, rank=2, j=7*z2 + 12, height=1
+f_E: 1, f_pi/f_E: 3, rank=2, j=5*z2 + 11, height=1
+f_E: 3, f_pi/f_E: 1, rank=1, j=3*z2 + 3, height=0
