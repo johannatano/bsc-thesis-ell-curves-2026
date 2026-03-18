@@ -23,6 +23,7 @@ const THEMES = {
     bodyBg: '#0e0e10',
     themeColor1: '#000000',
     themeColor2: '#ff00ff',
+    volcanoEdge: '#ff0000',
     sphere: {
       supersingular: new THREE.Color(1, 0, 0),
       eisenstein:    new THREE.Color(0.7, 0.7, 0.7),
@@ -50,14 +51,15 @@ const THEMES = {
     bodyBg: '#ffffff',
     themeColor1: '#000000',
     themeColor2: '#ff00ff',
+    volcanoEdge: '#bbbbbb',
     sphere: {
       supersingular: new THREE.Color(0.8, 0.1, 0.1),
       eisenstein:    new THREE.Color(.7, .7, .7),
       gaussian:      new THREE.Color(.7, .7, .7),
-      ordinary:      new THREE.Color(1.0, 1.0, 1.0),
+      ordinary:      new THREE.Color(.5, .5, .5),
       piConductor:   new THREE.Color(0x3da3ff),
       aboveFloor:    new THREE.Color(0x1a5bbf),
-      floorLevel:    new THREE.Color(0.9, 0.9, 0.9),
+      floorLevel:    new THREE.Color(0.7, 0.7, 0.7),
       hover:         new THREE.Color(0.7, 0, 0.7),
       selected:      new THREE.Color(0.8, 0.6, 0),
     },
@@ -125,6 +127,7 @@ let globalMaxLogCond = 1;
 let globalLogCondRange = 1;
 
 let labelRenderer = null;
+const volcanoConductorFlagAnchorCache = new Map();
 
 // Toggle connected-component spatial splitting in volcano view.
 // false: keep edge-aware ordering, but do not separate components in XZ.
@@ -501,8 +504,16 @@ function findCurvesWithJ(targetJ) {
   return matching;
 }
 
-function getThemeColor1() {
-  return new THREE.Color(THEMES[currentTheme].themeColor1);
+function getHighlightColor() {
+  return new THREE.Color(THEMES[currentTheme].themeColor2);
+}
+
+function getVolcanoBaseEdgeColor() {
+  return new THREE.Color(THEMES[currentTheme].volcanoEdge);
+}
+
+function getVolcanoBaseEdgeHex() {
+  return getVolcanoBaseEdgeColor().getHex();
 }
 
 function getCurveBaseColorByHeight(height) {
@@ -514,7 +525,7 @@ function getCurveBaseColorByHeight(height) {
 function setCurveVisualState(curve, state = 'base') {
   if (!curve?.material?.color) return;
   if (state === 'selected' || state === 'hover') {
-    curve.material.color.copy(getThemeColor1());
+    curve.material.color.copy(getHighlightColor());
     return;
   }
   const height = curve.userData?.height || 0;
@@ -526,14 +537,14 @@ function updateVolcanoEdgeHighlights() {
   const hoveredIDs = new Set((hoveredCurves || []).map(c => c?.userData?.curveID).filter(Boolean));
   const activeIDs = selectedIDs.size > 0 ? selectedIDs : hoveredIDs;
 
-  const activeColor = getThemeColor1();
+  const activeColor = getHighlightColor();
 
   selectedFieldGroup.traverse(obj => {
     if (!(obj instanceof THREE.Line)) return;
     if (!obj.userData?.edgeFrom || !obj.userData?.edgeTo || !obj.material?.color) return;
 
-    const baseColor = obj.userData.baseEdgeColor ?? 0x444444;
-    const baseOpacity = obj.userData.baseEdgeOpacity ?? 0.4;
+    const baseColor = obj.userData.baseEdgeColor ?? getVolcanoBaseEdgeHex();
+    const baseOpacity = obj.userData.baseEdgeOpacity ?? 0.95;
     const isActive = activeIDs.size > 0 && (activeIDs.has(obj.userData.edgeFrom) || activeIDs.has(obj.userData.edgeTo));
 
     if (isActive) {
@@ -788,6 +799,21 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
+function buildExportFilename(ext = 'png') {
+  const parts = [`p${P}`, `n${N}`];
+
+  if (Number.isFinite(Number(selectedDiscriminant))) {
+    parts.push(`D${Number(selectedDiscriminant)}`);
+  }
+
+  if (ui?.selectedEll && ui.selectedEll !== 'ALL' && Number.isFinite(Number(selectedVolcanoTrace))) {
+    parts.push(`ell${ui.selectedEll}`);
+    parts.push(`t${Number(selectedVolcanoTrace)}`);
+  }
+
+  return `${parts.join('_')}.${ext}`;
+}
+
 let _html2canvasPromise = null;
 function ensureHtml2Canvas() {
   if (window.html2canvas) return Promise.resolve(window.html2canvas);
@@ -809,11 +835,11 @@ function ensureHtml2Canvas() {
 }
 
 async function exportHighDpiScene(side = 'active', scale = 2, mimeType = 'image/png') {
-  const which = side === 'active' ? lastActiveSceneKey : side;
-  const slot = which === 'right' ? sceneManager.right : sceneManager.left;
+  const which = 'right';
+  const slot = sceneManager.right;
   if (!slot?.renderer || !slot?.scene || !slot?.camera) return;
 
-  const panel = document.getElementById(which === 'right' ? 'right' : 'left');
+  const panel = document.getElementById('right');
   const canvas = slot.renderer.domElement;
   const cssW = Math.max(1, Math.floor(canvas.clientWidth));
   const cssH = Math.max(1, Math.floor(canvas.clientHeight));
@@ -844,24 +870,22 @@ async function exportHighDpiScene(side = 'active', scale = 2, mimeType = 'image/
 
     ctx.drawImage(overlayCanvas, 0, 0);
 
-    const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `scene-${which}-${outCanvas.width}x${outCanvas.height}-${ts}.${ext}`;
+    const filename = buildExportFilename(ext);
     outCanvas.toBlob((blob) => {
       if (!blob) return;
       downloadBlob(blob, filename);
-      console.log(`Exported ${which} scene (with labels): ${filename}`);
+      console.log(`Exported scene (with labels): ${filename}`);
     }, mimeType, 0.98);
     return;
   } catch (err) {
     console.warn('Overlay capture failed; exporting scene only:', err);
   }
 
-  const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `scene-${which}-${outW}x${outH}-${ts}.${ext}`;
+  const filename = buildExportFilename(ext);
   outCanvas.toBlob((blob) => {
     if (!blob) return;
     downloadBlob(blob, filename);
-    console.log(`Exported ${which} scene (fallback): ${filename}`);
+    console.log(`Exported scene (fallback): ${filename}`);
   }, mimeType, 0.98);
 }
 
@@ -1395,6 +1419,17 @@ function hideFieldInfo() {
   ui.updateStatus(null);
 }
 
+function bindSceneActivityTracking(panelEl, sceneKey) {
+  if (!panelEl) return;
+  const markActive = (ev) => {
+    if (ev?.target?.closest?.('#ui')) return;
+    lastActiveSceneKey = sceneKey;
+  };
+  ['mouseenter', 'mousemove', 'pointerdown', 'mousedown', 'click'].forEach((eventName) => {
+    panelEl.addEventListener(eventName, markActive, true);
+  });
+}
+
 async function ensureCurvesLoaded(discriminant) {
   // Find the number field
   const nf = fieldData.find(f => Number(f.discriminant) === discriminant);
@@ -1917,6 +1952,8 @@ addEventListener('resize', () => {
   //ellipticRenderer.setCurves(CURVES);
 
   sceneManager.init(P, N, q);
+  bindSceneActivityTracking(document.getElementById('left'), 'left');
+  bindSceneActivityTracking(document.getElementById('right'), 'right');
   sceneManager.left.renderer.domElement.addEventListener('click', onClick);
   sceneManager.left.renderer.domElement.addEventListener('mousemove', onMouseMove);
   sceneManager.left.renderer.domElement.addEventListener('mouseenter', () => { lastActiveSceneKey = 'left'; });
@@ -2343,7 +2380,7 @@ function drawCurvesForField(discriminant, traceFilter = null) {
 
   const oldRightBounds = sceneManager.right.scene.getObjectByName('bounds-box');
   if (oldRightBounds) oldRightBounds.removeFromParent();
-  const sphereRadius = 0.4;
+  const sphereRadius = 0.46;
   const circleRadius = 5.0; // Small radius for the circle around each trace position
   const traceCircleRadius = rightCurveWidth * 0.32; // Larger base radius for default order/twist view
   const maxCircleRadius = rightCurveWidth * 0.34; // Larger maximum default circle radius
@@ -2353,6 +2390,15 @@ function drawCurvesForField(discriminant, traceFilter = null) {
   const selectedEll = ui.selectedEll;
   const activeVolcanoTrace = traceFilter !== null ? Number(traceFilter) : selectedVolcanoTrace;
   const volcanoFocusMode = layoutMode === 'circle' && selectedEll !== 'ALL' && activeVolcanoTrace !== null;
+  const volcanoFlagCacheKey = volcanoFocusMode
+    ? `${Number(discriminant)}|${Number(selectedEll)}|${layoutMode}`
+    : null;
+  const cachedVolcanoConductorAnchors = volcanoFlagCacheKey
+    ? (volcanoConductorFlagAnchorCache.get(volcanoFlagCacheKey) ?? new Map())
+    : null;
+  if (volcanoFlagCacheKey && !volcanoConductorFlagAnchorCache.has(volcanoFlagCacheKey)) {
+    volcanoConductorFlagAnchorCache.set(volcanoFlagCacheKey, cachedVolcanoConductorAnchors);
+  }
   // Calculate conductor range for log scaling (same as left box)
   const conductors = [];
   nf.isogeny_classes.forEach(ic => {
@@ -2365,9 +2411,30 @@ function drawCurvesForField(discriminant, traceFilter = null) {
   const minLogCond = Math.log(minCond + 1);
   const maxLogCond = Math.log(maxCond + 1);
   const logCondRange = maxLogCond - minLogCond || 1;
+
+  let visibleConductors = [...new Set(conductors)].sort((a, b) => a - b);
+  if (volcanoFocusMode) {
+    const activeClass = nf.isogeny_classes.find(ic => Number(ic.trace) === Number(activeVolcanoTrace));
+    const activeVolcano = activeClass?.volcanoes?.find(v => Number(v.ell) === Number(selectedEll)) ?? null;
+    if (activeClass && activeVolcano) {
+      const allowedCurveIDs = new Set();
+      activeVolcano.levels?.forEach(level => {
+        level.vertices?.forEach(curveID => allowedCurveIDs.add(curveID));
+      });
+
+      const volcanoConductors = activeClass.orders
+        .filter(order => (order.curves ?? []).some(curve => allowedCurveIDs.has(curve.ID)))
+        .map(order => Number(order.conductor))
+        .filter(Number.isFinite);
+
+      if (volcanoConductors.length > 0) {
+        visibleConductors = [...new Set(volcanoConductors)].sort((a, b) => a - b);
+      }
+    }
+  }
   
   // Get unique conductor values for axis ticks
-  const uniqueConductors = [...new Set(conductors)].sort((a, b) => a - b);
+  const uniqueConductors = visibleConductors;
   // Add conductor-based axes to right scene
   // Y axis maps conductor values (log-scaled, inverted)
   const conductorTicks = uniqueConductors.map(c => {
@@ -2394,7 +2461,7 @@ function drawCurvesForField(discriminant, traceFilter = null) {
         bestIdx = i;
       }
     }
-    return `f = ${uniqueConductors[bestIdx]}`;
+    return `f=${uniqueConductors[bestIdx]}`;
   };
   addCubeEdgeAxes(sceneManager.right.scene, (x, y, z) => new THREE.Vector3(x, y, z), {
     x: { domain: [-halfW, halfW], ticks: [], label: v => '' },
@@ -2464,8 +2531,8 @@ function drawCurvesForField(discriminant, traceFilter = null) {
   });
 
   const rightAxisTickLen = 4.8;
-  const rightAxisLabelExtraOutward = rightAxisTickLen * 1.0;
   const conductorOuterRadiusByValue = new Map();
+  const measuredConductorFlagAnchors = new Map();
 
   const placeAlongNearestPoleDirection = (obj, distanceFromPoleCenter = 0) => {
     if (!obj?.position || traceCentersXZ.length === 0) return;
@@ -2497,7 +2564,7 @@ function drawCurvesForField(discriminant, traceFilter = null) {
     if (!(obj instanceof CSS2DObject) || !obj.element?.style) return;
     const currentSize = parseFloat(obj.element.style.fontSize || '30');
     if (!Number.isFinite(currentSize) || currentSize <= 0) return;
-    obj.element.style.fontSize = `${currentSize * 0.60}px`;
+    obj.element.style.fontSize = `${currentSize * 0.82}px`;
     obj.element.style.lineHeight = '1';
     obj.element.style.whiteSpace = 'nowrap';
     obj.center.set(0.5, 0.5);
@@ -2510,7 +2577,8 @@ function drawCurvesForField(discriminant, traceFilter = null) {
   const traces = nf.isogeny_classes.map(ic => ic.trace);
   const uniqueTraces = [...new Set(traces)].sort((a, b) => a - b);
   
-  nf.isogeny_classes.forEach((ic, traceIndex) => {
+  const showTraceFlags = false;
+  if (showTraceFlags) nf.isogeny_classes.forEach((ic, traceIndex) => {
     const trace = ic.trace;
 
     const isActiveVolcanoTrace = volcanoFocusMode && Number(trace) === Number(activeVolcanoTrace);
@@ -2946,6 +3014,33 @@ function drawCurvesForField(discriminant, traceFilter = null) {
           conductorOuterRadiusByValue.set(Number(conductor), radial);
         }
 
+        if (volcanoFocusMode) {
+          const conductorNumber = Number(conductor);
+          const dir2 = new THREE.Vector2(xPos - centerXZ.x, zPos - centerXZ.y);
+          if (dir2.lengthSq() < 1e-9) dir2.set(-1, 0);
+          else dir2.normalize();
+
+          const candidate = {
+            centerX: centerXZ.x,
+            centerZ: centerXZ.y,
+            dirX: dir2.x,
+            dirZ: dir2.y,
+            radius: Math.max(sphereRadius, radial),
+            scoreRadius: radial,
+            scoreX: xPos
+          };
+          const prevAnchor = measuredConductorFlagAnchors.get(conductorNumber);
+          const shouldReplace = !prevAnchor
+            || candidate.scoreRadius > prevAnchor.scoreRadius + 1e-6
+            || (
+              Math.abs(candidate.scoreRadius - prevAnchor.scoreRadius) <= 1e-6
+              && candidate.scoreX > prevAnchor.scoreX
+            );
+          if (shouldReplace) {
+            measuredConductorFlagAnchors.set(conductorNumber, candidate);
+          }
+        }
+
         // Store sphere by curve ID for edge drawing
         curveIdToMesh.set(curve.ID, sphere);
       });
@@ -2978,8 +3073,8 @@ function drawCurvesForField(discriminant, traceFilter = null) {
           const toMesh = curveIdToMesh.get(toID);
           
           if (fromMesh && toMesh) {
-            const baseEdgeColor = 0x444444;
-            const baseEdgeOpacity = 0.4;
+            const baseEdgeColor = getVolcanoBaseEdgeHex();
+            const baseEdgeOpacity = 0.95;
             const lineMaterial = new THREE.LineBasicMaterial({
               color: baseEdgeColor,
               linewidth: 1,
@@ -3086,7 +3181,24 @@ function drawCurvesForField(discriminant, traceFilter = null) {
     }
   });
 
-  // Position ticks/labels per conductor level at 10% outside that level radius.
+  if (volcanoFocusMode && cachedVolcanoConductorAnchors) {
+    uniqueConductors.forEach((conductor) => {
+      const conductorNumber = Number(conductor);
+      if (!Number.isFinite(conductorNumber) || cachedVolcanoConductorAnchors.has(conductorNumber)) return;
+      const measured = measuredConductorFlagAnchors.get(conductorNumber);
+      if (!measured) return;
+      cachedVolcanoConductorAnchors.set(conductorNumber, {
+        centerX: measured.centerX,
+        centerZ: measured.centerZ,
+        dirX: measured.dirX,
+        dirZ: measured.dirZ,
+        radius: measured.radius
+      });
+    });
+  }
+
+  // Position conductor labels as short outward flags anchored just outside
+  // the curve ring (or the single center dot when the level has class number 1).
   const nearestConductorForY = (yVal) => {
     if (!Number.isFinite(Number(yVal)) || conductorTicks.length === 0) return null;
     let bestIdx = 0;
@@ -3118,28 +3230,61 @@ function drawCurvesForField(discriminant, traceFilter = null) {
     return { nearest, dir2 };
   };
 
+  const getConductorFlagAnchor = (conductor, fallbackObj = null) => {
+    const conductorNumber = Number(conductor);
+    if (volcanoFocusMode) {
+      const cached = cachedVolcanoConductorAnchors?.get(conductorNumber);
+      if (cached) {
+        return {
+          nearest: new THREE.Vector2(cached.centerX, cached.centerZ),
+          dir2: new THREE.Vector2(cached.dirX, cached.dirZ),
+          radius: cached.radius
+        };
+      }
+
+      const measured = measuredConductorFlagAnchors.get(conductorNumber);
+      if (measured) {
+        return {
+          nearest: new THREE.Vector2(measured.centerX, measured.centerZ),
+          dir2: new THREE.Vector2(measured.dirX, measured.dirZ),
+          radius: measured.radius
+        };
+      }
+    }
+
+    const levelRadius = conductorOuterRadiusByValue.get(conductorNumber) ?? 0;
+    const fallback = nearestCenterAndDirXZ(fallbackObj);
+    return {
+      nearest: fallback.nearest,
+      dir2: fallback.dir2,
+      radius: levelRadius
+    };
+  };
+
+  const rightAxisFlagGap = Math.max(0.35, sphereRadius * 1.05);
+  const rightAxisFlagLen = Math.max(1.8, rightAxisTickLen * 0.55);
+
   const tickPlacements = [];
   axisLines?.children?.forEach((obj) => {
     const conductorForObj = nearestConductorForY(obj?.position?.y);
-    const levelRadius = conductorOuterRadiusByValue.get(Number(conductorForObj)) ?? 0;
-    const baseOutsideRadius = Math.max(sphereRadius, levelRadius) * 1.10; // 10% outside level radius
-    const lineExtraTowardLabel = rightAxisLabelExtraOutward;
-    const outsideRadius = baseOutsideRadius + lineExtraTowardLabel;
-    const { nearest, dir2 } = nearestCenterAndDirXZ(obj);
+    const anchor = getConductorFlagAnchor(conductorForObj, obj);
+    const levelRadius = anchor.radius ?? 0;
+    const anchorRadius = Math.max(sphereRadius, levelRadius) + rightAxisFlagGap;
+    const { nearest, dir2 } = anchor;
 
-    // Tick must start at pole center and end at outsideRadius.
+    // Tick starts just outside the ring/dot and extends a short distance outward.
     const baseLen = (obj?.geometry?.parameters?.height ?? rightAxisTickLen);
     if (Number.isFinite(baseLen) && baseLen > 1e-9) {
       const currentScaleX = Number(obj?.scale?.x) || 1;
       const currentScaleZ = Number(obj?.scale?.z) || 1;
-      obj.scale.set(currentScaleX, outsideRadius / baseLen, currentScaleZ);
+      obj.scale.set(currentScaleX, rightAxisFlagLen / baseLen, currentScaleZ);
     }
 
     const dir3 = new THREE.Vector3(dir2.x, 0, dir2.y);
     obj.position.set(
-      nearest.x + dir2.x * (outsideRadius * 0.5),
+      nearest.x + dir2.x * (anchorRadius + rightAxisFlagLen * 0.5),
       Number(obj?.position?.y) || 0,
-      nearest.y + dir2.y * (outsideRadius * 0.5)
+      nearest.y + dir2.y * (anchorRadius + rightAxisFlagLen * 0.5)
     );
     obj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir3.normalize());
 
@@ -3147,42 +3292,54 @@ function drawCurvesForField(discriminant, traceFilter = null) {
       conductor: Number(conductorForObj),
       nearest: nearest.clone(),
       dir2: dir2.clone(),
-      outsideRadius,
+      anchorRadius,
+      tickEndRadius: anchorRadius + rightAxisFlagLen,
       y: Number(obj?.position?.y) || 0
     });
   });
 
   const rightAxisLabelMargin = 2.4;
-  axisLabels?.children?.forEach((obj) => {
-    if (obj instanceof CSS2DObject) {
-      // Use CSS2D anchor at the exact text-box center: translate(-50%, -50%).
-      obj.center.set(0.5, 0.5);
+  axisLabels?.traverse?.((obj) => {
+    if (obj instanceof CSS2DObject && obj.element?.parentNode) {
+      obj.element.parentNode.removeChild(obj.element);
     }
-    const labelY = Number(obj?.position?.y) || 0;
-    let tickPlacement = null;
-    let bestDist = Infinity;
-    for (const tp of tickPlacements) {
-      const d = Math.abs((Number(tp?.y) || 0) - labelY);
-      if (d < bestDist) {
-        bestDist = d;
-        tickPlacement = tp;
-      }
-    }
+  });
+  axisLabels?.clear?.();
 
-    const conductorForObj = nearestConductorForY(labelY);
-    const levelRadius = conductorOuterRadiusByValue.get(Number(conductorForObj)) ?? 0;
-    const baseOutsideRadius = Math.max(sphereRadius, levelRadius) * 1.10;
-    const lineExtraTowardLabel = rightAxisLabelExtraOutward;
-    const outsideRadius = baseOutsideRadius + lineExtraTowardLabel;
-    const nearest = tickPlacement?.nearest ?? nearestCenterAndDirXZ(obj).nearest;
-    const dir2 = tickPlacement?.dir2 ?? nearestCenterAndDirXZ(obj).dir2;
-    const labelDistance = (tickPlacement?.outsideRadius ?? outsideRadius) + rightAxisLabelMargin;
-    const yVal = Number.isFinite(tickPlacement?.y) ? tickPlacement.y : (Number(obj?.position?.y) || 0);
-    obj.position.set(
-      nearest.x + dir2.x * labelDistance,
-      yVal,
-      nearest.y + dir2.y * labelDistance
+  const conductorLabelsGroup = new THREE.Group();
+  conductorLabelsGroup.name = 'right-conductor-rim-labels';
+  sceneManager.right.scene.add(conductorLabelsGroup);
+
+  const uniqueTickPlacements = [];
+  const seenConductorTicks = new Set();
+  tickPlacements.forEach((tp) => {
+    const conductorKey = Number(tp?.conductor);
+    if (!Number.isFinite(conductorKey) || seenConductorTicks.has(conductorKey)) return;
+    seenConductorTicks.add(conductorKey);
+    uniqueTickPlacements.push(tp);
+  });
+
+  uniqueTickPlacements.forEach((tp) => {
+    const labelDiv = document.createElement('div');
+    labelDiv.style.color = THEMES[currentTheme].themeColor2;
+    labelDiv.style.fontSize = '24px';
+    labelDiv.style.lineHeight = '1';
+    labelDiv.style.whiteSpace = 'nowrap';
+    labelDiv.style.fontFamily = 'ui-monospace, monospace';
+    labelDiv.style.pointerEvents = 'none';
+    labelDiv.style.background = 'transparent';
+    labelDiv.style.padding = '0';
+    labelDiv.textContent = `f=${tp.conductor}`;
+
+    const label = new CSS2DObject(labelDiv);
+    label.center.set(0.5, 0.5);
+    const labelDistance = tp.tickEndRadius + rightAxisLabelMargin;
+    label.position.set(
+      tp.nearest.x + tp.dir2.x * labelDistance,
+      tp.y,
+      tp.nearest.y + tp.dir2.y * labelDistance
     );
+    conductorLabelsGroup.add(label);
   });
 
   updateVolcanoEdgeHighlights();
