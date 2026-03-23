@@ -6,7 +6,10 @@ import math
 from sympy import primerange
 from utils.common import Colors
 
-
+def max_ell_from_HB(q: int) -> int:
+    HB = math.isqrt(4*q)
+    return q + 1 + HB
+    
 def toID(id) -> str:
     return ''.join(str(id).split())
     
@@ -210,14 +213,12 @@ class IsogenyVolcano:
     def addVertrices(self, level: int, curves: List) -> None:
         for c in curves:
             self.levels[level].vertrices.append(c.ID)
+            
     def _get_level_by_ID(self, ID: str) -> Optional[int]:
         for i, level in enumerate(self.levels):
             if ID in level.vertrices:
                 return i
         return None 
-    
-
-                    
                     
     def addIsogeny(self, E1: str, E2: str) -> None:
         level = self._get_level_by_ID(E1)
@@ -284,11 +285,9 @@ class EndomorphismOrder:
 @dataclass
 class IsogenyClass:
     """Isogeny class of elliptic curves with a given trace of Frobenius.
-    
     This is t-dependent data: stores all curves with trace t over F_q,
     organized by conductor of their endomorphism ring.
     """
-    
     def __init__(self, t: int, q: int) -> None:
         self.t: int = t
         self.q: int = q
@@ -392,13 +391,10 @@ class IsogenyClass:
         fx_l = self.fx_pi.change_ring(Zmod(ell))
         fx_l_2 = self.fx_pi_2.change_ring(Zmod(ell))
         total_height = self.l_adic_height(ell) if self.ordinary else 0
-        
         volcano = IsogenyVolcano(ell, total_height, fx_l, self.q + 1 - self.t, fx_l_2, self.q + 1 + self.t)
         self.volcanoes[ell] = volcano
-        
         #N_pts = self.q + 1 - self.t
         #N_pts_2 = self.q + 1 + self.t
-        
         if not volcano.hasStructure():
             return fx_l, 0
         #print(f"{Colors.HEADER}Evaluating torsion at ell={ell} for t={self.t}, q={self.q}, N_pts={N_pts}, ordinary={self.ordinary}{Colors.ENDC}")
@@ -820,10 +816,10 @@ class NumberFieldsClassifier_Fq:
                     if abs(t) > 2*math.isqrt(q):
                         print(f"{Colors.WARNING}Warning: skipping trace t={t} as it exceeds the Hasse bound for F_{q}{Colors.ENDC}")
                         continue
-                    if t % self.char == 0:
-                        print(f"{Colors.WARNING}Warning: skipping trace t={t} as it is divisible by the characteristic{Colors.ENDC}")
-                        continue
-                    self.nr_fields.create_isogeny_class(t, n)
+                    #if t % self.char == 0:
+                    #    print(f"{Colors.WARNING}Warning: skipping trace t={t} as it is divisible by the characteristic{Colors.ENDC}")
+                    #    continue
+                    self.nr_fields.create_isogeny_class(abs(t), n)
                     #self.nr_fields.create_isogeny_class(-t, n)
                 continue
             
@@ -841,8 +837,8 @@ class NumberFieldsClassifier_Fq:
                 i_max = (q + 1 + HB) // ell
                 for i in tqdm(range(i_min, i_max + 1), desc=f"ell={ell}", unit="i", leave=False, ncols=80, ascii=True):
                     t = q + 1 - i*ell
-                    if( t % self.char == 0):
-                        continue
+                    #if( t % self.char == 0):
+                    #    continue
                     if abs(t) in used_ts:
                         continue
                     used_ts.add(abs(t))

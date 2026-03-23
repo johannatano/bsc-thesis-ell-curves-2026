@@ -16,14 +16,11 @@ def parse_args():
     p.add_argument("-n", "--n", type=int, required=False, default=-1, help="Field extension degree n")
     p.add_argument("-p", "--p", type=int, required=False, default=-1, help="Field char p")
     p.add_argument("-q_max", "--q_max", type=int, required=False, default=1000000, help="Field extension degree n")
-    #p.add_argument("-l", "--l", type=int, required=False, default=-1, help="Level ℓ")
-    #p.add_argument("-k", "--k", type=int, required=False, default=2, help="Weight k")
     return p.parse_args()
 
 def run(p: int, n:int, q_max:int):
     primes = list(primerange(5, 100)) if p == -1 else [p]
     p_powers = [i for i in range(1, 10)] if n == -1 else [n]
-    
     if n != -1:
         q_max = p ** n + 1
     for i in range(len(primes)): #skip char=2,3

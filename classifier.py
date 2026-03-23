@@ -6,13 +6,10 @@ import time
 from utils.ell_curves import CurvesClassifier_Fq
 from utils.ell_nr_field import NumberFieldsClassifier_Fq
 from utils.common import Logger, Colors, Data, Config
-from math import gcd
 from sympy import primerange
 from sage.all import *
 import numpy as np
 import requests
-from sage.schemes.elliptic_curves.ell_finite_field import supersingular_j_polynomial
-from sage.all import DirichletGroup
 
 def parse_args():
     p = argparse.ArgumentParser(description="Classify curves over F_q.")
@@ -30,26 +27,28 @@ def enum(p: int, n: int, use_HPC=False, max_ell=50):
     primes = list(primerange(5, 50)) if p == -1 else [p]
     p_powers = [i for i in range(1, 3)] if n == -1 else [n]
     dsize = len(primes)
-    q_max = 10**20  # Set a maximum q to avoid long computations
+    q_max = 10**20
     for i in range(dsize):
         p = primes[i]
         nf = None
-        if use_HPC:
-            data = Data.loadJSON(f"./data/{p}/nr_fields.json")
-            if data is not None:
-                NFC = NumberFieldsClassifier_Fq.fromJson(data)  # Load the number fields data into the classifier
-                nf = NFC.nr_fields  # Access the number fields data
-            else:
-                NFC = NumberFieldsClassifier_Fq(p)
-                nf = NFC.generate(p_powers, q_max=q_max)
+        #if use_HPC:
+            #data = Data.loadJSON(f"./data/{p}/nr_fields.json")
+            #if data is not None:
+            #    NFC = NumberFieldsClassifier_Fq.fromJson(data)
+            #    nf = NFC.nr_fields
+            #else:
+        NFC = NumberFieldsClassifier_Fq(p)
+        nf = NFC.generate(p_powers, q_max=q_max)
         for n in p_powers:
             q = p**n
             if q > q_max:
-                print(f"Skipping F_{q} due to size > 100000")
+                print(f"Skipping F_{q} due to size > {q_max}")
                 continue
             CC = CurvesClassifier_Fq(p, n, NF=nf)
-            CC.enumerate_curves(use_HPC=use_HPC) #here we create curves by j invariant, and generate the twists
-            CC.compute_torsion(max_ell=max_ell) #
+            CC.enumerate_curves(use_HPC=use_HPC)
+            CC.compute_torsion(max_ell=max_ell)
+            N_EP = CC.count_EP()
+            print(f"Total count of E(F_q) with full ℓ-torsion for some ℓ < {max_ell}: {N_EP}")
             
 if __name__ == "__main__":
     args = parse_args()

@@ -99,7 +99,7 @@ class TorsionSubgroup:
         self.points: List[Point] = []
         self.special_aut6_orbit: bool = False
 
-    def compute_rank(self, use_generators: bool = False) -> None:
+    def compute_rank(self, f_pi: int, use_generators: bool = False) -> None:
         if self.curve.N_pts % self.l != 0:
             self.rank = 0
             return
@@ -107,7 +107,7 @@ class TorsionSubgroup:
             self.gens = self._get_generators()
             self.rank = len(self.gens)
         else:
-            self.rank = self._compute_rank()
+            self.rank = self._compute_rank(f_pi)
 
     def generate_orbits(self):
         if self.rank == 2:
@@ -136,31 +136,7 @@ class TorsionSubgroup:
         return (fixed // self.curve.aut_size)
     
     def _count_orbits_general(self) -> int:
-        has_fixed_by_6 = self._get_fixed_points_count_aut6()
-        if self.curve.aut_size == 6 and has_fixed_by_6 > 0:
-            print(f"{Colors.FAIL}Has fixed points from aut size 6 BUT SHOULD NOT HAVE{Colors.ENDC}, for self.aut_size={self.curve.aut_size}, l={self.l}")
         return (self.l**self.rank-1) // self.curve.aut_size
-    
-    def _get_num_fixed(self) -> int:
-        if(self.l == 2):
-            if(self.curve.aut_size < 4):
-                return self.l**self.rank*self.curve.aut_size
-            elif(self.curve.aut_size == 4):
-                div_poly = self.curve.E.division_polynomial(self.l)
-                if(div_poly(0) == 0):
-                    return (self.l**self.rank-2)*2 + self.curve.aut_size*2 # 0, (0,0) always fixed + all others fixed by inverse and id
-                else:
-                    return (self.l**self.rank-1)*2 + self.curve.aut_size # 0, (0,0) always fixed + all nonzero fixed by inverse and id
-            else:
-                return ((self.l**self.rank-1)*2 + self.curve.aut_size) # 0 always fixed + all nonzero fixed by inverse and id
-        fixed = self.curve.aut_size # id fixed by all
-        fixed += ( self.l**self.rank - 1) # all nonzero points fixed by id
-    
-        if(self.curve.aut_size == 6):
-            n_extra = self._get_fixed_points_count_aut6()
-            fixed += n_extra # add extra fixed from special case
-            self.special_aut6_orbit = True if n_extra > 0 else False
-        return fixed
 
     def _add(self, ell_P) -> None:
         if ell_P.is_zero():
@@ -170,28 +146,12 @@ class TorsionSubgroup:
         if self._check_unique_orbit(P):
             self.orbits.append(P)
             self.n_orbits += 1
-            
-    def _get_fixed_points_count_aut6(self) -> int:
-        #if(self.curve.aut_size != 6):
-        #    return 0
-        # we need to get all l-torsion points with x = 0, hence, check wheter x = 0 is a root of the division polynomial
-        div_poly = self.curve.E.division_polynomial(self.l)
-        return 4 if div_poly(0) == 0 else 0
     
     def _check_unique_orbit(self, torsion_point: Point) -> bool:
         for S in self.orbits:
             for P in S.orbit(self.curve.aut_grp):
                 if torsion_point.point().xy() == P:
                     return False
-        return True
-    
-    def _rank_2_test(self) -> bool:
-        if(self.curve.N_pts % self.l**2 != 0): # necessary: group order multiple of l^2
-           return False
-        #if((self.curve.t - 2) % self.l != 0): # necessary: alpha + beta = t for a double root x = 1 gives t = 2 mod l
-        #    return False
-        if((self.curve.q - 1) % self.l != 0): # necessary: alpha*beta = q for a double root x = 1 gives q = 1 mod l
-            return False
         return True
     
     def _rank_by_group_structure(self) -> int:
@@ -222,15 +182,13 @@ class TorsionSubgroup:
         splits = all(f.degree() == 1 for f, m in w_poly.factor())
         return 2 if splits else 1
         
-    def _compute_rank(self) -> int:
+    def _compute_rank(self, f_pi) -> int:
         if self.curve.N_pts % self.l != 0:
             return 0
-        if not self._rank_2_test():
-            return 1
-        if self.curve.is_j0 or self.curve.is_j1728 or self.curve.is_supersingular:
-            rk2 = self._rank_by_group_structure()
-            return rk2
-        return self._rank_by_modular_poly()
+        if self.curve.is_supersingular:
+            return self._rank_by_group_structure()
+        return 2 if ZZ(self.curve.f_E).valuation(self.l) < ZZ(f_pi).valuation(self.l) else 1
+
 
     def _get_generators(self) -> List:
         """
@@ -274,7 +232,7 @@ class Curve:
     
     def _inv(self, el) -> Tuple[int, Tuple]:
         poly = el.minpoly()
-        print(f"Element {el} has minimal polynomial {poly} of degree {poly.degree()} with coefficients {poly.list()}")
+        #print(f"Element {el} has minimal polynomial {poly} of degree {poly.degree()} with coefficients {poly.list()}")
         return poly.degree(), tuple(int(c) for c in poly.list())
     
     def _inv_flatten(self, inv: Tuple) -> int:
@@ -282,7 +240,6 @@ class Curve:
         for c in reversed(inv):
             index = index * self.field.p + c
         return index
-    
     
     def _rank_by_group_structure(self, ell) -> int:
         if self.E is None:
@@ -304,33 +261,6 @@ class Curve:
             print(f"{Colors.WARNING}Warning: Division polynomial for ell={ell} may be expensive to compute, consider using modular polynomial method instead{Colors.ENDC}")
         n_roots = sum(m for _, m in psi_n.roots(multiplicities=True))
         return 2 if n_roots > 2 else (1 if n_roots > 0 else 0)
-    
-    
-    '''def _rank_by_modular_poly(self, ell):
-        # more cache firendly
-        x = polygen(self.field.F)
-        X, Y = polygens(self.field.F, 'X,Y')
-        phi = classical_modular_polynomial(ell)(X, Y)
-        phi_j = phi([x, self.j]) 
-        #phi_j = classical_modular_polynomial(ell, self.j)
-        n_roots = len(phi_j.roots(multiplicities=True))
-        return 2 if n_roots > 2 else (1 if n_roots > 0 else 0)
-    
-    def _above_floor(self, ell: int) -> bool:
-        return self._rank_by_modular_poly(ell) == 2
-        
-    def compute_prime_conductor(self, f_pi: int) -> int:
-        self.f_E = 1
-        if not self.is_supersingular: # all ss curves have maximal order ie fe = 1
-            for _l, e in f_pi.factor(): # since we require ell | f_pi, only need to consider the prime factors of f_pi
-                if (self.q-1) % _l != 0:
-                    self.f_E *= _l**e # volcano has no height at this l, set ladic height at max
-                    continue
-                h = e if self._above_floor(_l) else 0
-                self.f_E *= _l**(e-h)
-        return self.f_E    
-        '''
-            
             
     def _rank_by_modular_poly(self, ell):
         # more cache firendly
@@ -539,10 +469,6 @@ class GeometricCurve(Curve):
         t = self.t * -1 if not self.is_j0 and not self.is_j1728 else None
         result = [self] + [GeometricCurve(self.field, self.j, self.aut_grp, u**e[0] * self.A, u**e[1] * self.B, t=t, f_E=self.f_E) for u in coset_reps]
         return result
-
-
-    def addTorsionSubgroup(self, l: int, subgroup: TorsionSubgroup) -> None:
-        self.torsion[str(l)] = subgroup.toJSON()
         
     def weierstrass_polynomial(self):
         R = PolynomialRing(self.F, 'x')
@@ -566,7 +492,6 @@ class GeometricCurve(Curve):
             f *= l**(e-h)
         K = O.number_field()
         return K.order_of_conductor(f)
-    
             
     def toJSON(self, include_points: bool = False) -> Dict[str, Any]:
         return {
@@ -590,6 +515,7 @@ class EllFiniteFieldCatalogue:
     def get_isogeny_class(self, t: int, auto_create: bool = True):
         ell_t = self.NFC.get_isogeny_class(t, n=self.n)
         if ell_t is None and auto_create:
+            print(f"{Colors.HEADER}Creating new isogeny class for trace t={t} at extension degree n={self.n}{Colors.ENDC}")
             ell_t = self.NFC.create_isogeny_class(t, n=self.n)
         return ell_t
         
@@ -647,36 +573,9 @@ class CurvesClassifier_Fq:
     def enumerate_curves(self, use_HPC: bool = False, add_SS: bool = True) -> None:
         import time
         from tqdm import tqdm
-        
-        '''z4 = self.field.F.gen()
-        #j_test = z3**2 + 4*z3 + 1  # field element in F_{5^3} #83
-        j_test = 2*z4**3 + z4**2 + 4*z4 + 3 #29
-        j_test = 3*z4**3 + 3*z4**2 + z4 + 3 #97
-        ell = 71
-        import time
-        E = EllipticCurve(GF(self.field.q), j=j_test)
-        _t = time.perf_counter()
-        psi_n = E.division_polynomial(ell)
-        pts = psi_n.roots(multiplicities=False)
-        print(f"div_poly  ell={ell} q={self.field.q}: {(time.perf_counter()-_t)*1000:.2f} ms  ({len(pts)} roots)")
-        _t = time.perf_counter()
-        R = parent(j_test)['Y']
-        Y = R.gen()
-        #phi_l = _classical_modular_polynomial(ell, j_test)
-        phi_l = classical_modular_polynomial(ell)(j_test, Y)
-        pts_2 = phi_l.roots(multiplicities=True)'''
-        
-        '''print(floor(log(self.field.q)))
-        print(f"mod_poly  ell={ell} q={self.field.q}: {(time.perf_counter()-_t)*1000:.2f} ms  ({sum(m for _,m in pts_2)} roots)")
-        #return
-        print(f"O({ell**2})+O({floor((ell+1)*log(self.field.q))}) mod_poly vs O({ell})+O({floor(ell**2*log(self.field.q))}) div_poly for ell={ell}, q={self.field.q}, number of roots")
-        return
-        print(f"Precomputed 59-division polynomial roots for later use in rank tests, number of roots: {len(pts_2)}")
-        print(f"{Colors.HEADER}Enumerating Curves use_HPC={use_HPC} {Colors.ENDC}")'''
         if use_HPC:
             # first we have to manually add the curves which has supersingular j invariants since these are not included in HPC
             # check whether we are in ss case for special j-invariants, if so add them manually since these are not included in HPC enumeration
-            
             if add_SS:
                 if self.field.p % 3 == 2:
                     print(f"{Colors.FAIL}j-invariant 0 is SS{Colors.ENDC}")
@@ -695,7 +594,6 @@ class CurvesClassifier_Fq:
                     print(f"{Colors.HEADER}Found supersingular j-invariant root in F_{self.field.q}: j={r}, is_1728={(r-1728).is_zero()}{Colors.ENDC}")
                     self.add_nf_curve(self.field.F(r), t=0, f_E=1)  # we know these are SS, so t=0, and f_E=1 since they have maximal endomorphism ring
                     self.add_nf_curve(self.field.F(r), t=0, f_E=1)
-            
             # Iterate orders: get j-invariants, then add curves for matching isogeny classes
             nf_list = list(self.catalogue.NFC.data.values())
             _t0 = time.perf_counter()
@@ -716,18 +614,11 @@ class CurvesClassifier_Fq:
                             print(f"{Colors.HEADER}t ={t}, Adding curves for order with D_K={D_K}, f={f}, j={j_inv}{Colors.ENDC}")
                             self.add_nf_curve(j_inv, t=t, f_E=f)
         else:
-            
             _t0 = time.perf_counter()
             precompute_conductor = True
-            
-            #valid = [0, 1728] + [50, 667, 39]
             for j in tqdm(self.field.F, total=self.field.q, desc=f"F_{self.field.q}", unit="j", ncols=80, ascii=True):
-                #if j == 0 or (j - 1728).is_zero() or j in valid:
                 self.add_curves_by_j(j, pre_compute_conductor=precompute_conductor)
-                
-        #for ic in self.catalogue.isogeny_classes():
-            #if ic.empty:
-                #print(f"{Colors.WARNING}Warning: isogeny class with t={ic.t} is empty after enumeration{Colors.ENDC}")
+        
         global highest_ell
         NE = 2*(self.field.q -2) + gcd(4, self.field.q-1) + gcd(6, self.field.q-1)  # Hasse bound for number of points, so we have at most NE curves per isogeny class, but usually much less
         if self.catalogue.size != NE:
@@ -756,7 +647,7 @@ class CurvesClassifier_Fq:
         aut_grp = self._get_aut_group_for_j(j)
         self.catalogue.add(NFCurve(self.field, j, aut_grp=aut_grp, t=t, f_E=f_E))
     
-    def compute_torsion(self, max_ell: int = 50, compute_volcano: bool = False) -> None:
+    def compute_torsion(self, max_ell: int = 100, compute_volcano: bool = False) -> None:
         from tqdm import tqdm
         import time
         primes = list(primerange(2, max_ell))
@@ -767,9 +658,54 @@ class CurvesClassifier_Fq:
                 if ell == self.field.p:
                     continue
                 ell_t.eval_torsion_at_ell(ell, compute_volcano=compute_volcano)
+    
+    def count_EP(self) -> int:
+        from tqdm import tqdm
+        import time
+        isogeny_classes = self.catalogue.isogeny_classes()
+        N_EP = 0
+        _t0 = time.perf_counter()
+        #primes = list(primerange(2, 100))
+        #print(f"{Colors.HEADER}MAX L = {max_ell_from_HB(self.field.q)}{Colors.ENDC}")
+        #primes = primerange(1, max_ell_from_HB(self.field.q)+1)  # count orbits only for small primes to avoid expensive computations, can be adjusted based on needs
+        for ell_t in tqdm(isogeny_classes, desc="computing torsion", unit="ic", ncols=80, ascii=True):
+            for ell, v in ell_t.volcanoes.items():
+                #if ell == self.field.p:
+                #    continue
+                if not v.hasStructure():
+                    continue
+                #if ell_t.N_pts % ell != 0:
+                #    continue
+                #print(f"{Colors.HEADER}Counting orbits for volcano at ell={ell}, t={ell_t.t}{Colors.ENDC}")
+                for f, curves_list in ell_t.curves_by_order.items():
+                    for c in curves_list:
+                        if not isinstance(c, GeometricCurve):
+                            print(f"{Colors.FAIL}Warning: Expected GeometricCurve instance for EP counting, got {type(c)}. Skipping...{Colors.ENDC}")
+                            return 0
+                        torsion_subgroup = TorsionSubgroup(c, ell)
+                        torsion_subgroup.compute_rank(f_pi=ell_t.f_pi, use_generators=False)
+                        N_EP += torsion_subgroup.count_orbits()
         print(f"Computed torsion in {time.perf_counter() - _t0:.2f}s")
-    
-    
+        return N_EP
+        
+    def compute_hecke(self) -> int:
+        from tqdm import tqdm
+        import time
+        isogeny_classes = self.catalogue.isogeny_classes()
+        N_EP = 0
+        _t0 = time.perf_counter()
+        for ell_t in tqdm(isogeny_classes, desc="computing torsion", unit="ic", ncols=80, ascii=True):
+            for ell, v in ell_t.volcanoes.items():
+                if not v.hasStructure():
+                    continue
+                #if we are here, we have at leadt rank 1
+                for f, curves_list in ell_t.curves_by_order.items():
+                    for E in curves_list:
+                        torsion_subgroup = TorsionSubgroup(E, ell)
+                        #torsion_subgroup.compute_rank(f_pi=ell_t.f_pi, use_generators=False)
+                        #N_EP += torsion_subgroup.count_orbits()
+        print(f"Computed torsion in {time.perf_counter() - _t0:.2f}s")
+        return N_EP
     
             
     def toJSON(self) -> Dict[str, Any]:

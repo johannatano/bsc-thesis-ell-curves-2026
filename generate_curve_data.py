@@ -85,29 +85,19 @@ def _save_catalogue_to_cache_db(p: int, n: int, payload: dict, db_path: Path) ->
 def generate(p: int, n: int, t_list: list[int], to_db: bool = False, db_path: str = ""):
     q_max = 10**20  # Set a maximum q to avoid long computations
     nf = None
-    # we prepopulate a catalogue of possible traces, hence discriminants ie nr fields for this char, up to a max n
     print(f"\n=== Processing prime p={p}, t={t_list}, loading json.... ===")
     q = p**n
     NFC = NumberFieldsClassifier_Fq(p)
     nf = NFC.generate([n], q_max=q+1, t_list=t_list)
-        # if we do not load precomputed json, first generate the number fields catalogue for this p and n
-        # create the classifier for curves over F_q, add the precomputed nr fields data, and enumerate curves using HCP
     CC = CurvesClassifier_Fq(p, n, NF=nf)
     CC.enumerate_curves(use_HPC=True, add_SS=False) #here we create curves by j invariant, and generate the twists
     CC.compute_torsion(max_ell=50, compute_volcano=True) #
-        #CC.enumerate_curves()
-        #print(f"\nTotal unique j-invariants found: {len(added_js)}")
-    #CC.compute_volcano_edges()
-        #print(f"Saving results for F_{q}...")
     out = CC.toJSON()
-    #Data.saveJSON(f"./data/{p}", f"curves_TEST_{q}.json", out, readable=False)
-
     if to_db:
         db = _cache_db_path(db_path)
         _init_cache_db(db)
         written = _save_catalogue_to_cache_db(p, n, out, db)
         print(f"Saved {written} number-field payload(s) to cache DB: {db}")
-        #print(f"Done with F_{q}. {CC.catalogue.size} curves found.\n") 
        
 if __name__ == "__main__":
     args = parse_args()
