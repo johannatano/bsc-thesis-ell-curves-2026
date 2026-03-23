@@ -209,7 +209,7 @@ class CurvesClassifier_Fq:
         print(f"Computed torsion in {time.perf_counter() - _t0:.2f}s")
         return N_EP
         
-    def compute_hecke(self, k, level) -> int:
+    def compute_hecke(self, k, level, use_CN=False) -> int:
         """Compute the trace contribution of the Hecke operator $T_{level}$ in weight `k`."""
         from tqdm import tqdm
         import time
@@ -219,13 +219,20 @@ class CurvesClassifier_Fq:
         _t0 = time.perf_counter()
         for ell_t in tqdm(isogeny_classes, desc="computing torsion", unit="ic", ncols=80, ascii=True):
             hk = ell_t.eval_hk_mod_fx(level, hk_symbolic)
-            v = ell_t.volcanoes.get(level)
-            if not v.hasStructure():
+            if ell_t.N_pts % level != 0:
                 continue
-            for f, curves_list in ell_t.curves_by_order.items():
-                r = 2 if ZZ(f).valuation(level) < ZZ(ell_t.f_pi).valuation(level) else 1
-                for c in curves_list:
-                    T -= hk * (level**r-1) // c.aut_size
+            if use_CN and ell_t.ordinary:
+                for f, o in ell_t.orders.items():
+                    aut_size = 2
+                    if ell_t.D_K in [-3, -4] and int(f) == 1:
+                        aut_size = 6 if ell_t.D_K == -3 else 4
+                    r = 2 if ZZ(f).valuation(level) < ZZ(ell_t.f_pi).valuation(level) else 1
+                    T -= hk * o.class_number * (level**r-1) // aut_size
+            else:     
+                for f, curves_list in ell_t.curves_by_order.items():
+                    r = 2 if ZZ(f).valuation(level) < ZZ(ell_t.f_pi).valuation(level) else 1
+                    for c in curves_list:
+                        T -= hk * (level**r-1) // c.aut_size
         print(f"Computed hecke trace in {time.perf_counter() - _t0:.2f}s")
         return T
     

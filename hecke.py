@@ -35,17 +35,15 @@ def run(p: int, l:int, k:int, use_HCP=False, use_CN=False):
         for i in range(dsize):
             p = primes[i]
             nf = None
-            if use_HCP:
+            if use_HCP or use_CN:
                 NFC = NumberFieldsClassifier_Fq(p)
                 nf = NFC.generate(p_powers, q_max=q_max)
             q = p
             if q > q_max:
                 print(f"Skipping F_{q} due to size > {q_max}")
                 continue
-            continue
             CC = CurvesClassifier_Fq(p, 1, NF=nf)
             CC.enumerate_curves(use_HCP=use_HCP, use_CN=use_CN)
-            #CC.compute_torsion(ell=ell)
             T = CC.compute_hecke(k=args.k, level=ell, use_CN=use_CN)
             print(f"Total Hecke trace for level {ell} and weight {args.k}: {T}")
             

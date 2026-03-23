@@ -33,7 +33,7 @@ class Point:
         self._stab_size: int = 1
 
     def phi(self, u):
-        """Apply the standard automorphism action $(x,y) \mapsto (u^2x,u^3y)$."""
+        """Apply the standard automorphism action"""
         if self.P.is_zero(): return self.P
         x, y = self.P.xy()
         return (u^2 * x, u^3 * y)
