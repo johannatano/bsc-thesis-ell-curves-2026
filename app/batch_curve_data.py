@@ -6,17 +6,17 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent
 DATA_ROOT = ROOT / "data"
 DEFAULT_DB = DATA_ROOT / "cache.sqlite3"
+DEBUG_DUMP = ROOT / "out.json"
 
 
 @dataclass(frozen=True)
 class Job:
     p: int
     n: int
-    d: int
+    discriminants: list[int]
     traces: list[int]
 
 def parse_args():
@@ -109,6 +109,20 @@ def cache_has_row(db_path: Path, p: int, n: int, d: int) -> bool:
     return row is not None
 
 
+def cache_has_rows_for_job(db_path: Path, job: Job) -> bool:
+    if not job.discriminants:
+        return False
+
+    placeholders = ",".join("?" for _ in job.discriminants)
+    params = [int(job.p), int(job.n), *[int(d) for d in job.discriminants]]
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            f"SELECT COUNT(DISTINCT d) FROM curve_cache WHERE p=? AND n=? AND d IN ({placeholders})",
+            params,
+        ).fetchone()
+    return int(row[0] or 0) == len(job.discriminants)
+
+
 def discover_primes() -> list[int]:
     primes = []
     if not DATA_ROOT.exists():
@@ -132,7 +146,7 @@ def load_jobs_for_prime(p: int, n_filter: set[int] | None, d_filter: set[int] | 
     with path.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
-    jobs: list[Job] = []
+    grouped: dict[int, dict[str, set[int]]] = {}
     for nf in data.get("nr_fields", {}).get("nf", []):
         d = int(nf.get("D"))
         if d_filter is not None and d not in d_filter:
@@ -143,17 +157,64 @@ def load_jobs_for_prime(p: int, n_filter: set[int] | None, d_filter: set[int] | 
             if n_filter is not None and n not in n_filter:
                 continue
 
-            traces = [int(ic.get("t")) for ic in (tree.get("I_t", []) or []) if "t" in ic]
+            traces = [abs(int(ic.get("t"))) for ic in (tree.get("I_t", []) or []) if "t" in ic]
             if not traces:
                 continue
 
-            jobs.append(Job(p=p, n=n, d=d, traces=traces))
+            if n not in grouped:
+                grouped[n] = {"discriminants": set(), "traces": set()}
+            grouped[n]["discriminants"].add(d)
+            grouped[n]["traces"].update(traces)
 
-    jobs.sort(key=lambda j: (j.p, j.n, abs(j.d), j.d))
+    jobs: list[Job] = [
+        Job(
+            p=p,
+            n=n,
+            discriminants=sorted(grouped[n]["discriminants"], key=lambda d: (abs(d), d)),
+            traces=sorted(grouped[n]["traces"]),
+        )
+        for n in sorted(grouped.keys())
+    ]
+    jobs.sort(key=lambda j: (j.p, j.n))
     return jobs
 
 
+def write_debug_dump_from_db(job: Job, db_path: Path) -> bool:
+    if not job.discriminants:
+        return False
+
+    placeholders = ",".join("?" for _ in job.discriminants)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT d, payload_json FROM curve_cache WHERE p=? AND n=? AND d IN ({placeholders})",
+            [int(job.p), int(job.n), *[int(d) for d in job.discriminants]],
+        ).fetchall()
+
+    if not rows:
+        return False
+
+    number_fields = []
+    for _, payload_json in sorted(rows, key=lambda row: (abs(int(row[0])), int(row[0]))):
+        if not payload_json:
+            continue
+        payload = json.loads(payload_json)
+        number_fields.extend(payload.get("catalogue", {}).get("number_fields", []) or [])
+
+    payload = {
+        "char": int(job.p),
+        "catalogue": {
+            "number_fields": number_fields,
+        },
+    }
+    print(f"Writing DB payload debug dump to {DEBUG_DUMP}")
+    with DEBUG_DUMP.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    return True
+
+
 def run_job(job: Job, db_path: Path, timeout: int) -> tuple[bool, str]:
+    
+    print(f"Running job: p={job.p}, n={job.n}, D_count={len(job.discriminants)}, traces={job.traces}")
     cmd = [
         "sage",
         "-python",
@@ -178,8 +239,10 @@ def run_job(job: Job, db_path: Path, timeout: int) -> tuple[bool, str]:
         timeout=timeout,
     )
     elapsed = time.time() - start
+    if result.returncode == 0:
+        write_debug_dump_from_db(job, db_path)
 
-    key = f"p={job.p} n={job.n} D={job.d}"
+    key = f"p={job.p} n={job.n} D_count={len(job.discriminants)}"
     if result.returncode == 0:
         return True, f"[ok] {key} ({elapsed:.1f}s)"
 
@@ -219,7 +282,7 @@ def main():
 
     if args.dry_run:
         for j in jobs:
-            print(f"[plan] p={j.p} n={j.n} D={j.d} traces={j.traces}")
+            print(f"[plan] p={j.p} n={j.n} D_count={len(j.discriminants)} traces={j.traces}")
         return 0
 
     ok_count = 0
@@ -228,9 +291,10 @@ def main():
 
     started = time.time()
     for idx, job in enumerate(jobs, start=1):
-        key = f"p={job.p} n={job.n} D={job.d}"
-        if not args.force and cache_has_row(db_path, job.p, job.n, job.d):
+        key = f"p={job.p} n={job.n} D_count={len(job.discriminants)}"
+        if not args.force and cache_has_rows_for_job(db_path, job):
             skip_count += 1
+            write_debug_dump_from_db(job, db_path)
             print(f"[{idx}/{planned}] [skip-cache] {key}")
             continue
 

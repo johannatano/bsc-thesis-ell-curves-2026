@@ -6,8 +6,12 @@ import json
 import sqlite3
 from pathlib import Path
 
-from utils.ell_curves import CurvesClassifier_Fq
-from utils.ell_nr_field import NumberFieldsClassifier_Fq
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from lib.curves_classifier import CurvesClassifier_Fq
+from lib.nr_fields_classifier import NumberFieldsClassifier_Fq
 from utils.common import Logger, Colors, Data, Config
 from math import gcd
 from sympy import primerange
@@ -30,7 +34,7 @@ def parse_args():
 def _cache_db_path(user_db_path: str = "") -> Path:
     if user_db_path:
         return Path(user_db_path)
-    return Path(__file__).parent / "data" / "cache.sqlite3"
+    return Path(__file__) / "data" / "cache.sqlite3"
 
 
 def _init_cache_db(db_path: Path) -> None:
@@ -91,13 +95,14 @@ def generate(p: int, n: int, t_list: list[int], to_db: bool = False, db_path: st
     nf = NFC.generate([n], q_max=q+1, t_list=t_list)
     CC = CurvesClassifier_Fq(p, n, NF=nf)
     CC.enumerate_curves(use_HPC=True, add_SS=False) #here we create curves by j invariant, and generate the twists
-    CC.compute_torsion(max_ell=50, compute_volcano=True) #
+    CC.compute_volcano(edges=True)
     out = CC.toJSON()
     if to_db:
         db = _cache_db_path(db_path)
         _init_cache_db(db)
         written = _save_catalogue_to_cache_db(p, n, out, db)
         print(f"Saved {written} number-field payload(s) to cache DB: {db}")
+    Data.saveJSON(f"./data/{p}", f"curves_TEST_{q}.json", out, readable=False)
        
 if __name__ == "__main__":
     args = parse_args()

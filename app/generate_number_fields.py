@@ -1,7 +1,7 @@
 import argparse
 import sys
 import os
-from utils.ell_nr_field import NumberFieldsClassifier_Fq
+from lib.nr_fields_classifier import NumberFieldsClassifier_Fq
 from utils.common import Logger, Colors, Data
 from math import gcd
 from sympy import primerange
@@ -27,7 +27,7 @@ def run(p: int, n:int, q_max:int):
         p = primes[i]
         CNF = NumberFieldsClassifier_Fq(p)
         CNF.generate(p_powers, q_max=q_max)
-        Data.saveJSON(f"./data/{p}", f"nr_fields.json", CNF.toJSON(), readable=False) 
+        Data.saveJSON(f"data/{p}", f"nr_fields.json", CNF.toJSON(), readable=False) 
      
 if __name__ == "__main__":
     args = parse_args()

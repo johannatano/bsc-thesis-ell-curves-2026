@@ -8,8 +8,9 @@ import sqlite3
 import time
 
 app = Flask(__name__)
-DATA_ROOT = Path(__file__).parent / "data"   # Points to WSL.BscThesis/data
-CACHE_DB = Path(__file__).parent / "data" / "cache.sqlite3"
+APP_ROOT = Path(__file__).resolve().parent
+DATA_ROOT = APP_ROOT / "data"
+CACHE_DB = DATA_ROOT / "cache.sqlite3"
 
 
 def _get_db_conn():

@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 
 app = Flask(__name__)
-DATA_ROOT = Path(__file__).parent / "data"
+DATA_ROOT = Path(__file__) / "data"
             
 @app.route('/get_curves/<int:p>/<int:n>', methods=['GET'])
 def enumerate_order(p, n):
