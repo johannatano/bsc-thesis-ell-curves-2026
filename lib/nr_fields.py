@@ -24,7 +24,7 @@ def toID(id) -> str:
 checked_js = set()  # global set to track which j-invariants have been processed
 @dataclass
 class FqData:
-    """Basic container for the finite field $F_{p^n}$."""
+    """Basic container for the finite field F_{p^n}."""
     p: int
     n: int
     q: int = field(init=False)
@@ -43,7 +43,7 @@ class FqData:
     
 #################### GENERIC HELPER ####################
 def element_to_tuple(x) -> Tuple:
-    """Return coordinates of an element of $GF(p^n)$ in the standard basis."""
+    """Return coordinates of an element of GF(p^n) in the standard basis."""
     poly = x.polynomial()
     coeffs = tuple(int(c) for c in poly.list())
     return coeffs + (0,)*(x.parent().degree() - len(coeffs))
@@ -117,13 +117,11 @@ class MOD_POLY:
         cls._bivariate_cache.clear()
         cls._eval_cache.clear()
 
-    
-
 class Hk:
     """Helpers for the symmetric polynomials appearing in Hecke computations."""
     @staticmethod
     def construct(k: int):
-        """Build the polynomial $h_k(X,Y)=\sum_{i=0}^k X^{k-i}Y^i$."""
+        """Build the polynomial h_k(X,Y)=sum_{i=0}^k X^{k-i}Y^i."""
         R = PolynomialRing(ZZ, ['X', 'Y'])
         X, Y = R.gens()
         terms = [X**(k-i) * Y**i for i in range(k+1)]
@@ -759,89 +757,3 @@ class NumberFieldData:
         return nf
 
 
-class NumberFieldCatalogue:
-    """Global catalogue of all imaginary quadratic fields and their associated data.
-    
-    Central registry that manages:
-    - Number field creation and lookup by discriminant
-    - Isogeny class creation and trace assignment to orders
-    - Cross-referencing between orders and isogeny classes
-    """
-    
-    def __init__(self, p: int) -> None:
-        self.p: int = p
-        self.data: Dict[int, NumberFieldData] = {}
-
-    def create_isogeny_class(self, t: int, n: int) -> IsogenyClass:
-        """Create the signed isogeny class for trace `t` if it does not yet exist."""
-
-        ell_t = self.get_isogeny_class(t, n)
-        if ell_t:
-            return ell_t
-
-        ell_t = IsogenyClass(t=t, q=self.p**n)
-        D_K = ell_t.D_K
-        field = self.getFieldByDiscriminant(D_K)
-        field.addIsogenyClass(ell_t)
-        return ell_t
-    
-    def getFieldByDiscriminant(self, D: int) -> NumberFieldData:
-        field = self.data.get(D)
-        return field if field is not None else self.addField(D)
-    
-    def addField(self, D: int) -> NumberFieldData:
-        self.data[D] = NumberFieldData(dk=D)
-        return self.data[D]
-    
-    def get_isogeny_class(self, t: int, n: int) -> Optional[IsogenyClass]:
-        """Search the whole catalogue for the isogeny class with trace `t`."""
-        for nf_info in self.data.values():
-            ell_t = nf_info.getIsogenyClass(t, n)
-            if ell_t is not None:
-                return ell_t
-        return None
-    
-    def get_isogeny_classes_by_n(self, n: int) -> List[IsogenyClass]:
-        """Return all signed isogeny classes for the given extension degree."""
-        classes = []
-        for nf_info in self.data.values():
-            tree = nf_info.getTreeByN(n)
-            classes.extend(tree.isogeny_classes)
-        return classes
-    
-    def getCurvesByJ(self, j, n: Optional[int] = None) -> List:
-        """Return all curves with the given j-invariant across the selected degree."""
-        if n is None:
-            n = self.N
-        curves = []
-        for nf_info in self.data.values():
-            tree = nf_info.getTreeByN(n)
-            for ic in tree.isogeny_classes:
-                curve = ic.getCurveByJ(j)
-                if curve:
-                    curves.append(curve)
-        return curves
-
-    def sort(self) -> None:
-        """Sort number fields by discriminant (smallest absolute value first)"""
-        self.data = dict(sorted(self.data.items(), key=lambda item: abs(item[0])))
-
-    def toJSON(self) -> Dict[str, List]:
-        """Serialize the full catalogue grouped by quadratic discriminant."""
-        return {
-            "nf": [{
-                "D": int(nf.discriminant),
-                "tree": [tree.toJSON() for tree in nf.tree],
-                #"isogeny_classes": [ic.toJSON(include_curves=False) for ic in nf.isogeny_classes.values()]
-            } for dk, nf in self.data.items() ]
-        }
-
-    @classmethod
-    def fromJSON(cls, data: Dict[str, Any], p: int) -> 'NumberFieldCatalogue':
-        catalogue = cls(p=int(p))
-        catalogue.data = {}
-        for nf_data in data.get("nf", []) or []:
-            nf = NumberFieldData.fromJSON(nf_data, p=int(p))
-            catalogue.data[int(nf.discriminant)] = nf
-        catalogue.sort()
-        return catalogue

@@ -24,13 +24,56 @@ from utils.common import Logger, Colors
 from lib.ell_torsion_subgroup import *
 from lib.curves import *
 from lib.nr_fields import *
-#from utils.mod_poly import _classical_modular_polynomial
+from lib.nr_fields_classifier import NumberFieldCatalogue
+
+# from utils.mod_poly import _classical_modular_polynomial
 
 highest_ell = 0
 
 # =============================================================================
 # Curve enumeration and classification
 # =============================================================================
+
+class EllFiniteFieldCatalogue:
+    """In-memory catalogue of curves over a fixed finite field F_{p^n}.
+
+    This class acts as the bridge between concrete curve objects and the more
+    arithmetic, trace-indexed number-field catalogue.
+    """
+    def __init__(self, Fq: FqData, NF: Optional['NumberFieldCatalogue'] = None) -> None:
+        self.p: int = Fq.p
+        self.n: int = Fq.n
+        self.q: int = Fq.q
+        self.field: FqData = Fq
+        self.size: int = 0
+        self.NFC: 'NumberFieldCatalogue' = NF if NF is not None else NumberFieldCatalogue(self.p)
+    
+    def get_isogeny_class(self, t: int, auto_create: bool = True):
+        ell_t = self.NFC.get_isogeny_class(t, n=self.n)
+        if ell_t is None and auto_create:
+            #print(f"{Colors.HEADER}Creating new isogeny class for trace t={t} at extension degree n={self.n}{Colors.ENDC}")
+            ell_t = self.NFC.create_isogeny_class(t, n=self.n)
+        return ell_t
+        
+    def add(self, curve: Curve) -> None:
+        """Insert a curve into the isogeny class determined by its trace."""
+        t = curve.t
+        ell_t = self.get_isogeny_class(t)
+        ell_t.add_curve(curve)
+        self.size += 1
+        
+    def isogeny_classes(self) -> List:
+        return self.NFC.get_isogeny_classes_by_n(self.n)
+
+    def toJSON(self) -> Dict[str, List]:
+        """Serialize the catalogue grouped by imaginary quadratic discriminant."""
+        return {
+            "number_fields": [{
+                "D": int(nf_info.discriminant),
+                "tree": [tree.toJSON(include_curves=True) for tree in nf_info.tree]
+            } for dk, nf_info in self.NFC.data.items() ]
+        }
+
 
 class CurvesClassifier_Fq:
     """Main classifier for enumerating and organizing elliptic curves over F_q.
@@ -210,7 +253,7 @@ class CurvesClassifier_Fq:
         return N_EP
         
     def compute_hecke(self, k, level, use_CN=False) -> int:
-        """Compute the trace contribution of the Hecke operator $T_{level}$ in weight `k`."""
+        """Compute the trace contribution of the Hecke operator T_{level} in weight `k`."""
         from tqdm import tqdm
         import time
         hk_symbolic = Hk.construct(k)
