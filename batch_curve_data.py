@@ -19,7 +19,6 @@ class Job:
     d: int
     traces: list[int]
 
-
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Batch prepopulate curve_cache by invoking generate_curve_data.py per (p,n,D)."
