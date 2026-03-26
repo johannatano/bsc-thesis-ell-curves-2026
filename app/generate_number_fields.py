@@ -1,6 +1,12 @@
 import argparse
 import sys
 import os
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from lib.nr_fields_classifier import NumberFieldsClassifier_Fq
 from utils.common import Logger, Colors, Data
 from math import gcd
@@ -10,6 +16,7 @@ import numpy as np
 import requests
 from sage.schemes.elliptic_curves.ell_finite_field import supersingular_j_polynomial
 from sage.all import DirichletGroup
+
 
 def parse_args():
     p = argparse.ArgumentParser(description="Classify curves over F_q.")
@@ -28,7 +35,7 @@ def run(p: int, n:int, q_max:int):
         CNF = NumberFieldsClassifier_Fq(p)
         CNF.generate(p_powers, q_max=q_max)
         Data.saveJSON(f"data/{p}", f"nr_fields.json", CNF.toJSON(), readable=False) 
-     
+
 if __name__ == "__main__":
     args = parse_args()
     print(f"Generating number fields for p={args.p}, n={args.n}, q_max={args.q_max}...")

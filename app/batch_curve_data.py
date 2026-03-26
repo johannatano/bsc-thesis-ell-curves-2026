@@ -99,7 +99,6 @@ def init_cache_db(db_path: Path) -> None:
             """
         )
 
-
 def cache_has_row(db_path: Path, p: int, n: int, d: int) -> bool:
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(

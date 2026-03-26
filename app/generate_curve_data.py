@@ -25,7 +25,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="Classify curves over F_q.")
     p.add_argument("-p", "--p", type=int, required=True, default=-1, help="Field char p")
     p.add_argument("-n", "--n", type=int, required=True, default=-1, help="Field extension degree n")
-    p.add_argument("-t", "--t_list", type=int, nargs='+', required=True, help="List of traces t")
+    p.add_argument("-t", "--t_list", type=int, nargs='+', required=False, help="List of traces t")
     p.add_argument("--to-db", action="store_true", default=False, help="Also persist output to SQLite cache (one row per discriminant D)")
     p.add_argument("--db-path", type=str, default="", help="Optional SQLite path (default: ./data/cache.sqlite3)")
     return p.parse_args()
@@ -89,12 +89,15 @@ def _save_catalogue_to_cache_db(p: int, n: int, payload: dict, db_path: Path) ->
 def generate(p: int, n: int, t_list: list[int], to_db: bool = False, db_path: str = ""):
     q_max = 10**20  # Set a maximum q to avoid long computations
     nf = None
-    print(f"\n=== Processing prime p={p}, t={t_list}, loading json.... ===")
+
     q = p**n
-    NFC = NumberFieldsClassifier_Fq(p)
-    nf = NFC.generate([n], q_max=q+1, t_list=t_list)
-    CC = CurvesClassifier_Fq(p, n, NF=nf)
-    CC.enumerate_curves(use_HPC=True, add_SS=False) #here we create curves by j invariant, and generate the twists
+    print(f"\n=== Processing q={q}.... ===")
+    
+    #NFC = NumberFieldsClassifier_Fq(p)
+    #nf = NFC.generate([n], q_max=q+1, t_list=t_list)
+    CC = CurvesClassifier_Fq(p, n, NF=None)
+    
+    CC.enumerate_curves(use_HCP=False, add_SS=False) #we dont need the SS curves for the viz
     CC.compute_volcano(edges=True)
     out = CC.toJSON()
     if to_db:
@@ -102,15 +105,8 @@ def generate(p: int, n: int, t_list: list[int], to_db: bool = False, db_path: st
         _init_cache_db(db)
         written = _save_catalogue_to_cache_db(p, n, out, db)
         print(f"Saved {written} number-field payload(s) to cache DB: {db}")
-    Data.saveJSON(f"./data/{p}", f"curves_TEST_{q}.json", out, readable=False)
-       
+    Data.saveJSON(f"./data/{p}", f"curves_{q}.json", out, readable=False)
+
 if __name__ == "__main__":
     args = parse_args()
     generate(args.p, args.n, t_list=args.t_list, to_db=args.to_db, db_path=args.db_path)
-    
-
-        
-        
-    
-    
-    

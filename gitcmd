@@ -1,0 +1,4 @@
+git switch viz
+git merge --no-commit main
+git restore --source=HEAD --staged --worktree app
+git commit -m "Merge main into viz (keep app)"

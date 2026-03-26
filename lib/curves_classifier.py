@@ -206,13 +206,14 @@ class CurvesClassifier_Fq:
         """Build ℓ-isogeny volcano data for each isogeny class."""
         from tqdm import tqdm
         import time
-        primes = [ell] if ell != -1 else list(primerange(2, max_ell_from_HB(self.field.q)+1))
+        primes = [ell] if ell != -1 else list(primerange(2, min(100,max_ell_from_HB(self.field.q)+1)))
         isogeny_classes = self.catalogue.isogeny_classes()
         _t0 = time.perf_counter()
         for ell_t in tqdm(isogeny_classes, desc="computing torsion", unit="ic", ncols=80, ascii=True):
             for ell in primes:
                 if ell == self.field.p:
                     continue
+                #print(f"{Colors.HEADER}Computing {ell}-isogeny volcano for trace t={ell_t.t}, n={self.field.n}...{Colors.ENDC}")
                 ell_t.compute_volcano(ell, edges=edges)
     
     def count_EP(self, ell, use_CN : bool = False) -> int:

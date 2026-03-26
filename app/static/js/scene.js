@@ -93,14 +93,6 @@ export class SceneManager {
       tickLen: 1.0, color: 0x6e7387
     });
 
-    const X0 = -Math.floor(P / 2), X1 = Math.ceil(P / 2) - 1;
-    const rangeInts = (a, b) => { const out = []; for (let v = a; v <= b; v++) out.push(v); return out; };
-    addCubeEdgeAxes(this.right.scene, this.mapTorsXYZ, {
-      x: { domain: [X0, X1], ticks: rangeInts(X0, X1), label: v => v },
-      y: { domain: [X0, X1], ticks: rangeInts(X0, X1), label: v => v },
-      z: { domain: [0, N - 1], ticks: [...Array(N).keys()], label: v => v },
-      tickLen: 1.0, color: 0x6e7387, showEdges: false
-    });
   }
 
   setupMappers(P, N, q, box = 36, pad = 0.9, preserveCamera = false) {

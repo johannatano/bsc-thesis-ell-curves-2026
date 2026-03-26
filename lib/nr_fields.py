@@ -94,6 +94,7 @@ class MOD_POLY:
         """Return `Phi_ell(X,Y)` reduced to `GF(q)` and cached by `(ell,q)`."""
         key = (int(ell), int(q))
         if key not in cls._bivariate_cache:
+            print(f"{Colors.GREEN}Constructing bivariate modular polynomial for ell={ell}, q={q}...{Colors.ENDC}")
             R = PolynomialRing(GF(int(q)), ['X', 'Y'])
             phi_ZZ = classical_modular_polynomial(int(ell))
             cls._bivariate_cache[key] = R(phi_ZZ)
@@ -266,13 +267,21 @@ class IsogenyVolcano:
     def toJSON_pair(positive_trace_volcano: Optional['IsogenyVolcano'], negative_trace_volcano: Optional['IsogenyVolcano']) -> Dict[str, Any]:
         """Serialize the pair of volcanoes for `t` and `-t` into one compressed entry."""
         template = positive_trace_volcano if positive_trace_volcano is not None else negative_trace_volcano
+        # Use levels from whichever volcano actually has structure (non-empty levels/edges).
+        # Negative trace (`+`) may be the only active one when positive trace's N is not
+        # divisible by ell, in which case template.levels would be empty.
+        if negative_trace_volcano is not None and negative_trace_volcano.hasStructure() and \
+                (positive_trace_volcano is None or not positive_trace_volcano.hasStructure()):
+            level_source = negative_trace_volcano
+        else:
+            level_source = template
         return {
             "ell": int(template.ell),
             "-fx_roots": IsogenyVolcano._roots_to_list(positive_trace_volcano.fx_pi) if positive_trace_volcano is not None else [],
             "+fx_roots": IsogenyVolcano._roots_to_list(negative_trace_volcano.fx_pi) if negative_trace_volcano is not None else [],
             "-": positive_trace_volcano.hasStructure() if positive_trace_volcano is not None else False,
             "+": negative_trace_volcano.hasStructure() if negative_trace_volcano is not None else False,
-            "levels": [level.toJSON() for level in template.levels],
+            "levels": [level.toJSON() for level in level_source.levels],
         }
 
     @classmethod
@@ -457,6 +466,7 @@ class IsogenyClass:
                 if f > 0:
                     h = total_height - ZZ(f).valuation(ell)
                     self.volcanoes[ell].addVertrices(h, curves_list)
+                    #print(f"{Colors.BLUE}Added {len(curves_list)} curves with conductor f={f} at height h={h} in volcano for ell={ell}, t={self.t}, Npts={self.N_pts}{Colors.ENDC}")
                     if edges:
                         for c in curves_list:
                             self.compute_volcano_edges(ell, c)
@@ -476,6 +486,8 @@ class IsogenyClass:
             for k in range(m):
                 target_curve = self.getCurveByJ(r)
                 if target_curve is not None:
+                    if ell == 23 and self.D_K == -136:
+                        print(f"{Colors.FAIL}Adding edge in volcano for ell={ell} between {curve.ID} and {target_curve.ID} with j={r}, t={self.t}{Colors.ENDC}")
                     self.volcanoes[ell].addIsogeny(curve.ID, target_curve.ID)
                 
     def add_curve(self, curve) -> None:

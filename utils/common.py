@@ -52,7 +52,7 @@ class Logger:
         #    json.dump(CFq.toJSON(), f, separators=(",", ":"))
         #except Exception as e:
         #    Logger.cprint(f"Failed for F_{q}: {e}", Colors.FAIL)
-        
+
 class Data:
     @staticmethod
     def saveJSON(path: str, fileName:str, data: dict, readable=True) -> None:
@@ -106,5 +106,5 @@ class Colors:
 
 class Config:
     """Global runtime configuration, set once from CLI args."""
-    rank_method: str = "auto"  # "auto" | "div_poly" | "mod_poly" | "invariants"
+    rank_method: str = "mod_poly"  # "auto" | "div_poly" | "mod_poly" | "invariants"
     use_true_height: bool = False

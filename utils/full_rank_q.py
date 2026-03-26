@@ -5,13 +5,23 @@ AND the Hasse bound interval [q+1-HB, q+1+HB] contains a multiple of ell
 """
 from sympy import primerange
 from math import isqrt, log
+import argparse
 
-from utils.common import Colors
+from common import Colors
 
-P_MAX   = 10**6     # primes p up to this
-N_MAX   = 5       # extension degrees n to consider
-ELL_MAX = 101     # torsion primes ell < this
-Q_MAX   = 10**16 # skip q above this
+parser = argparse.ArgumentParser(description="Find q=p^n with full ell-torsion potential.")
+parser.add_argument("--p-max",   type=int,   default=10**6,  help="Primes p up to this (default: 10^6)")
+parser.add_argument("--n-max",   type=int,   default=5,      help="Extension degrees n to consider (default: 5)")
+parser.add_argument("--ell-max", type=int,   default=101,    help="Torsion primes ell < this (default: 101)")
+parser.add_argument("--ell-min", type=int,   default=90,     help="Only consider ell > this for interesting cases (default: 90)")
+parser.add_argument("--q-max",   type=int,   default=10**16, help="Skip q above this (default: 10^16)")
+args = parser.parse_args()
+
+P_MAX   = args.p_max
+N_MAX   = args.n_max
+ELL_MAX = args.ell_max
+ELL_MIN = args.ell_min
+Q_MAX   = args.q_max
 
 primes   = [p for p in primerange(5, P_MAX)]  # exclude char 2 and 3
 ell_list = list(primerange(2, ELL_MAX))
@@ -41,7 +51,7 @@ for p in primes:
         if q > Q_MAX:
             break
         #print(f"Checking F_{q}, p={p}, n={n}... ", end="")
-        dividing = [ell for ell in ell_list if ell > 90 and n > 2 and (q - 1) % ell == 0 and hasse_valid(ell, q)]
+        dividing = [ell for ell in ell_list if ell > ELL_MIN and (q - 1) % ell == 0 and hasse_valid(ell, q)]
         if dividing:
             results.append((q, p, n, dividing))
 
