@@ -1,4 +1,3 @@
-
 """Arithmetic data structures for isogeny classes over finite fields.
 
 This module contains the number-field side of the project: finite-field helper
@@ -17,10 +16,10 @@ from utils.common import Colors
 def max_ell_from_HB(q: int) -> int:
     HB = math.isqrt(4*q)
     return q + 1 + HB
-    
+
 def toID(id) -> str:
     return ''.join(str(id).split())
-    
+
 checked_js = set()  # global set to track which j-invariants have been processed
 @dataclass
 class FqData:
@@ -32,7 +31,7 @@ class FqData:
     
     def __post_init__(self) -> None:
         self.q = self.p ** self.n
-        self.F = GF(self.q)
+        self.F = GF(self.q, 'x', modulus='conway')
         self.g = self.F.multiplicative_generator()
         
     def multiplicative_generator(self):
@@ -40,7 +39,15 @@ class FqData:
     
     def extend(self, n: int) -> 'FqData':
         return FqData(self.p, self.n * n)
-    
+
+_FIELD_CACHE = {}
+
+def get_fq(p: int, n: int) -> FqData:
+    key = (int(p), int(n))
+    if key not in _FIELD_CACHE:
+        _FIELD_CACHE[key] = FqData(p, n)
+    return _FIELD_CACHE[key]
+
 #################### GENERIC HELPER ####################
 def element_to_tuple(x) -> Tuple:
     """Return coordinates of an element of GF(p^n) in the standard basis."""
@@ -90,12 +97,13 @@ class MOD_POLY:
     _eval_cache: Dict[Tuple[int, int, str], Any] = {}
 
     @classmethod
-    def construct(cls, ell: int, q: int):
+    def construct(cls, ell: int, p:int, n:int):
         """Return `Phi_ell(X,Y)` reduced to `GF(q)` and cached by `(ell,q)`."""
-        key = (int(ell), int(q))
+        key = (int(ell), int(p**n))
         if key not in cls._bivariate_cache:
-            print(f"{Colors.GREEN}Constructing bivariate modular polynomial for ell={ell}, q={q}...{Colors.ENDC}")
-            R = PolynomialRing(GF(int(q)), ['X', 'Y'])
+            print(f"{Colors.GREEN}Constructing bivariate modular polynomial for ell={ell}, q={p**n}...{Colors.ENDC}")
+            F = get_fq(p, n).F
+            R = PolynomialRing(F, ['X', 'Y'])
             phi_ZZ = classical_modular_polynomial(int(ell))
             cls._bivariate_cache[key] = R(phi_ZZ)
         return cls._bivariate_cache[key]
@@ -109,7 +117,7 @@ class MOD_POLY:
         key = (int(ell), q, j_id)
         if key not in cls._eval_cache:
             x = polygen(F)
-            phi = cls.construct(ell, q)
+            phi = cls.construct(ell, F.characteristic(), F.degree())
             cls._eval_cache[key] = phi([x, j])
         return cls._eval_cache[key]
 
@@ -139,7 +147,7 @@ class Hk:
         for _ in range(k - 1):
             hk_prev, hk_curr = hk_curr, t * hk_curr - q * hk_prev
         return hk_curr
-      
+
 class RootsOfUnity:
     """Factories for the root-of-unity groups governing curve automorphisms."""
     @staticmethod
@@ -182,7 +190,7 @@ class Isogeny():
     codomain: str
     def edge(self) -> Tuple[str, str]:
         return (self.domain, self.codomain)
-    
+
 @dataclass
 class IsogenyVolcanoLevel:
     """Single level of an ℓ-isogeny volcano graph."""
@@ -203,7 +211,7 @@ class IsogenyVolcanoLevel:
             vertrices=list(data.get("vertrices", data.get("vertices", [])) or []),
             edges=[tuple(edge) for edge in (data.get("edges", []) or [])],
         )
-    
+
 class IsogenyVolcano:
     """Compressed representation of the ℓ-isogeny volcano for one trace class."""
     def __init__(self, ell: int, height: int, fx_pi = None, N:int = 0) -> None:
@@ -373,19 +381,20 @@ class IsogenyClass:
     compatible endomorphism orders, the curves in the class, and any precomputed
     volcano information.
     """
-    def __init__(self, t: int, q: int) -> None:
+    def __init__(self, t: int, p:int, n:int) -> None:
+        self.Fq = get_fq(p,n)
         self.t: int = t
-        self.q: int = q
-        self.N_pts = q + 1 - t
-        #self.N_pts_2 = q + 1 + t
-        self.n: int = int(ZZ(q).factor()[0][1]) if q > 1 else 1  # extract n from q = p^n
-        self.p: int = int(ZZ(q).factor()[0][0])
-        self.D_pi = ZZ(t*t - 4*q)
+        self.q: int = self.Fq.q
+        self.N_pts = self.q + 1 - t
+        # self.N_pts_2 = self.q + 1 + t
+        self.n: int = self.Fq.n  # extract n from q = p^n
+        self.p: int = self.Fq.p
+        self.D_pi = ZZ(t*t - 4*self.q)
         self.ordinary = (self.t % self.p) != 0
         R = PolynomialRing(ZZ, 'x')
         x = R.gen()
-        self.fx_pi = x**2 - t*x + q
-        #self.fx_pi_2 = x**2 + t*x + q
+        self.fx_pi = x**2 - t*x + self.q
+        # self.fx_pi_2 = x**2 + t*x + self.q
         self.volcanoes = {}
         self.O_K = None
         self.f_pi = 1
@@ -405,9 +414,9 @@ class IsogenyClass:
         self.empty = True
         self.curves_by_order = {}  # dict: conductor (f_E) -> list of Curve objects
         self.curves = {}  # dict: curve_ID -> Curve (for quick lookup)
-        
+
         self.ID = f"t{self.t}_n{self.n}"
-        
+
     def ensure_order_exists(self, D_K: int, K, conductor: int) -> EndomorphismOrder:
         """Ensure that the order of the given conductor has been constructed."""
         conductor_key = str(conductor)
@@ -421,11 +430,11 @@ class IsogenyClass:
                 D_K=int(D_K)
             )
         return self.orders[conductor_key]
-    
+
     def l_adic_height(self, l: int) -> int:
         """Return the ℓ-adic valuation of the Frobenius conductor `f_pi`."""
         return self.f_pi.valuation(l)
-    
+
     def full_rank_primes(self) -> int:
         """Return primes for which the class can have full rational ℓ-torsion."""
         primes = []
@@ -433,14 +442,14 @@ class IsogenyClass:
             if self.N_pts % _l**2 == 0:
                 primes.append(_l)
         return primes
-    
+
     def D_K_Legedre(self, l: int) -> int:
         return kronecker(self.D_K, l)
-        
+
     def H(self) -> int:
         """Return the Hurwitz class number attached to the Frobenius discriminant."""
         return pari(4*self.q - self.t*self.t).qfbhclassno()
-    
+
     def eval_hk_mod_fx(self, ell: int, hk_symbolic):
         """Reduce the Hecke polynomial expression modulo the Frobenius polynomial."""
         fx = self.fx_pi
@@ -452,7 +461,7 @@ class IsogenyClass:
         result_uni = R(result_multi)
         final_value = result_uni.quo_rem(fx)[1]
         return final_value    
-    
+
     def compute_volcano(self, ell: int, edges:bool = False) -> IsogenyVolcano:
         """Build the ℓ-isogeny volcano for this isogeny class."""
         fx_l = self.fx_pi.change_ring(Zmod(ell))
@@ -466,7 +475,7 @@ class IsogenyClass:
                 if f > 0:
                     h = total_height - ZZ(f).valuation(ell)
                     self.volcanoes[ell].addVertrices(h, curves_list)
-                    #print(f"{Colors.BLUE}Added {len(curves_list)} curves with conductor f={f} at height h={h} in volcano for ell={ell}, t={self.t}, Npts={self.N_pts}{Colors.ENDC}")
+                    # print(f"{Colors.BLUE}Added {len(curves_list)} curves with conductor f={f} at height h={h} in volcano for ell={ell}, t={self.t}, Npts={self.N_pts}{Colors.ENDC}")
                     if edges:
                         for c in curves_list:
                             self.compute_volcano_edges(ell, c)
@@ -477,7 +486,7 @@ class IsogenyClass:
         else:
             self.volcanoes[ell].addVertrices(0, self.getCurves())
         return volcano
-    
+
     def compute_volcano_edges(self, ell, curve) -> None:
         """Add outgoing isogeny edges for one curve using the modular polynomial."""
         mod_poly = MOD_POLY.eval(ell, curve.j)
@@ -489,11 +498,11 @@ class IsogenyClass:
                     if ell == 23 and self.D_K == -136:
                         print(f"{Colors.FAIL}Adding edge in volcano for ell={ell} between {curve.ID} and {target_curve.ID} with j={r}, t={self.t}{Colors.ENDC}")
                     self.volcanoes[ell].addIsogeny(curve.ID, target_curve.ID)
-                
+
     def add_curve(self, curve) -> None:
         """Insert a curve into the class, grouped by endomorphism conductor."""
         level = curve.f_E if curve.f_E is not None else -1
-        
+
         if level not in self.curves_by_order:
             self.curves_by_order[level] = []
         curr_len = len(self.curves_by_order[level])
@@ -502,19 +511,19 @@ class IsogenyClass:
         self.curves[curve.ID] = curve
         self.empty = False
         self.generic = self.generic and (not curve.is_j0) and (not curve.is_j1728)
-        
+
     def getCurves(self, conductor: Optional[int] = None) -> List:
         if conductor is not None:
             return self.curves_by_order.get(conductor, [])
         else:
             return list(self.curves.values())
-        
+
     def getCurveByJ(self, j) -> Optional[Any]:
         for curve in self.curves.values():
             if curve.j == j:
                 return curve
         return None
-         
+
     def toJSON(self, include_curves: bool = False) -> Dict[str, Any]:
         """Serialize a single signed isogeny class."""
         result = {
@@ -647,7 +656,6 @@ class IsogenyClass:
             cls.fromJSON(positive_payload, p=p, n=n),
             cls.fromJSON(negative_payload, p=p, n=n),
         ]
-    
 
 
 class NumberFieldTree:
@@ -767,5 +775,3 @@ class NumberFieldData:
         for tree_data in data.get("tree", []) or []:
             nf.tree.append(NumberFieldTree.fromJSON(tree_data, p=p))
         return nf
-
-

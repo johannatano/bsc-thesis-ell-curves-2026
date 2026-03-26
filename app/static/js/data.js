@@ -6,6 +6,7 @@ export class Curve {
   constructor(data) {
     this.ID = data.ID;
     this.j = data.j;  // j-invariant coefficients
+    this.j_minpoly = data.j_minpoly ?? data.jMinpoly ?? null;
     this.A = data.A;  // Weierstrass A coefficients
     this.B = data.B;  // Weierstrass B coefficients
     this.inv = data.inv;  // Group structure invariants
@@ -82,10 +83,13 @@ export function mergeCurvesIntoFields(fieldsData, curvesJson, n) {
     }
     
     const sourceTree = (curveField.tree ?? []).find(t => Number(t.n) === Number(n));
-    if (!sourceTree) continue;
+    const sourceClasses = sourceTree
+      ? (sourceTree.I_t ?? sourceTree.ic ?? [])
+      : (curveField.I_t ?? curveField.ic ?? []);
+    if (!sourceClasses.length) continue;
 
     // Merge each isogeny class
-    for (const curveIC of (sourceTree.I_t ?? sourceTree.ic ?? [])) {
+    for (const curveIC of sourceClasses) {
       const sourceTrace = Number(curveIC.t ?? curveIC.trace);
 
       // Generator may store one class per |t|. Always merge curves into both ±t

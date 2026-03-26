@@ -9,7 +9,6 @@ from sage.all import *
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Tuple, Set, Any
 import math
-import sys
 from sympy import primerange
 from utils.common import Colors
 from lib.nr_fields import *
@@ -36,7 +35,7 @@ class NumberFieldCatalogue:
         if ell_t:
             return ell_t
 
-        ell_t = IsogenyClass(t=t, q=self.p**n)
+        ell_t = IsogenyClass(t=t, p=self.p, n=n)
         D_K = ell_t.D_K
         field = self.getFieldByDiscriminant(D_K)
         field.addIsogenyClass(ell_t)
@@ -155,28 +154,10 @@ class NumberFieldsClassifier_Fq:
             primes = list(primerange(2, min(max_prime + 1, q_max)))
 
             from tqdm import tqdm
-            for ell in tqdm(
-                primes,
-                desc=f"F_{q} primes",
-                unit="ell",
-                leave=False,
-                position=0,
-                dynamic_ncols=True,
-                ascii=True,
-                file=sys.stdout,
-            ):
+            for ell in tqdm(primes, desc=f"F_{q} primes", unit="ell", leave=False, ncols=80, ascii=True):
                 i_min = (q + 1 - HB + ell - 1) // ell
                 i_max = (q + 1 + HB) // ell
-                for i in tqdm(
-                    range(i_min, i_max + 1),
-                    desc=f"ell={ell}",
-                    unit="i",
-                    leave=False,
-                    position=1,
-                    dynamic_ncols=True,
-                    ascii=True,
-                    file=sys.stdout,
-                ):
+                for i in tqdm(range(i_min, i_max + 1), desc=f"ell={ell}", unit="i", leave=False, ncols=80, ascii=True):
                     t = q + 1 - i*ell
                     if abs(t) in used_ts:
                         continue

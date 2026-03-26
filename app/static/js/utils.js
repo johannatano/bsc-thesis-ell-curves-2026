@@ -8,22 +8,20 @@ export function sievePrimes(max) {
 
 export function setStatus(statusEl, txt) { 
   statusEl.innerHTML = txt;
-  
-  // Add click handlers for volcano rows after content is set
-  setTimeout(() => {
-    const volcanoRows = statusEl.querySelectorAll('.volcano-row');
-    volcanoRows.forEach(row => {
-      row.addEventListener('click', () => {
-        const ell = row.getAttribute('data-ell');
-        const trace = row.getAttribute('data-trace');
-        // Dispatch custom event that app.js will listen to
-        const event = new CustomEvent('volcanoRowClick', {
-          detail: { ell: Number(ell), trace: Number(trace) }
-        });
-        window.dispatchEvent(event);
+
+  if (!statusEl.dataset.volcanoClickBound) {
+    statusEl.addEventListener('click', (ev) => {
+      const row = ev.target?.closest?.('.volcano-row');
+      if (!row || !statusEl.contains(row)) return;
+      const ell = row.getAttribute('data-ell');
+      const trace = row.getAttribute('data-trace');
+      const event = new CustomEvent('volcanoRowClick', {
+        detail: { ell: Number(ell), trace: Number(trace) }
       });
+      window.dispatchEvent(event);
     });
-  }, 0);
+    statusEl.dataset.volcanoClickBound = 'true';
+  }
 }
 
 export function padToN(arr, n) {

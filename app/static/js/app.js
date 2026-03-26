@@ -23,7 +23,7 @@ const THEMES = {
     bodyBg: '#0e0e10',
     themeColor1: '#000000',
     themeColor2: '#ff00ff',
-    volcanoEdge: '#ff0000',
+    volcanoEdge: '#bbbbbb',
     sphere: {
       supersingular: new THREE.Color(1, 0, 0),
       eisenstein:    new THREE.Color(0.7, 0.7, 0.7),
@@ -34,6 +34,7 @@ const THEMES = {
       floorLevel:    new THREE.Color(0.7, 0.7, 0.7),
       hover:         new THREE.Color(1, 0, 1),
       selected:      new THREE.Color(0xffff00),
+      secondarySelected: new THREE.Color(0x2ecc71),
     },
     tube:   { colorStart: 0xffffff, colorEnd: 0xffffff },
     axis:   0x6e7387,
@@ -41,8 +42,8 @@ const THEMES = {
     uiColor:'#ddd',
     labelBg:'rgba(0,0,0,0.4)',
     labelColor: '#aaa',
-    inputBg: '#2a2a30',
-    inputColor: '#ddd',
+    inputBg: '#000',
+    inputColor: '#fff',
     inputBorder: '#444',
     pillBg: '#1f1f26',
   },
@@ -62,6 +63,7 @@ const THEMES = {
       floorLevel:    new THREE.Color(0.7, 0.7, 0.7),
       hover:         new THREE.Color(0.7, 0, 0.7),
       selected:      new THREE.Color(0.8, 0.6, 0),
+      secondarySelected: new THREE.Color(0x1f9d55),
     },
     tube:   { colorStart: 0x222222, colorEnd: 0x222222 },
     axis:   0x444444,
@@ -75,7 +77,7 @@ const THEMES = {
     pillBg: '#e0e0e0',
   },
 };
-let currentTheme = 'light';
+let currentTheme = 'dark';
 
 // ==================== STATE ====================
 const SELECTED = new Set();
@@ -109,8 +111,10 @@ let hoveredDiscriminant = null;  // Track which field is being hovered
 let hoveredConductor = null;  // Track conductor of hovered dot
 let selectedDiscriminant = null;  // Track the selected discriminant across N changes
 let selectedVolcanoTrace = null;  // Trace for the volcano explicitly clicked in status panel
+let selectedVolcanoEll = 'ALL';
 let originalColors = new Map();  // Store original colors for hover restoration
 let fieldInfoEl = null;  // Field info display element
+let conductorsListEl = null;
 let lastActiveSceneKey = 'left';
 
 const selectedFieldGroup = new THREE.Group();
@@ -120,6 +124,7 @@ discriminantLabelsGroup.name = 'discriminant-labels';
 // Crosshair for left box
 const leftCrosshairGroup = new THREE.Group();
 leftCrosshairGroup.name = 'left-crosshair';
+const SHOW_LEFT_CROSSHAIR = false;
 
 // Store global conductor normalization (used for positioning and axis labels)
 let globalMinLogCond = 0;
@@ -128,6 +133,12 @@ let globalLogCondRange = 1;
 
 let labelRenderer = null;
 const volcanoConductorFlagAnchorCache = new Map();
+let flatFieldListPanelEl = null;
+let flatFieldListBodyEl = null;
+let flatFieldListHeaderEl = null;
+let flatFieldListTitleEl = null;
+const SHOW_LEFT_DK_LIST_UI = true;
+const SHOW_LEFT_DK_INFO_UI = false;
 
 // Toggle connected-component spatial splitting in volcano view.
 // false: keep edge-aware ordering, but do not separate components in XZ.
@@ -148,7 +159,9 @@ sceneManager.scenes.forEach(s => s.renderer.setClearColor(THEMES[currentTheme].r
 
 sceneManager.left.scene.add(nrFieldsGroup);
 sceneManager.left.scene.add(discriminantLabelsGroup);
-sceneManager.left.scene.add(leftCrosshairGroup);
+if (SHOW_LEFT_CROSSHAIR) {
+  sceneManager.left.scene.add(leftCrosshairGroup);
+}
 sceneManager.right.scene.add(selectedFieldGroup);
 
 
@@ -168,6 +181,296 @@ async function loadCurves(p, n) {
   const r = await fetch(url, { cache: "no-store" });
   if (!r.ok) throw new Error(`${url} → ${r.status} ${r.statusText}`);
   return r.json();
+}
+
+function ensureFlatFieldListPanel() {
+  if (flatFieldListPanelEl && flatFieldListBodyEl && flatFieldListHeaderEl && flatFieldListTitleEl) return;
+
+  const panel = document.createElement('div');
+  panel.id = 'flat-field-list-panel';
+  panel.style.cssText = `
+    position: fixed;
+    left: 0;
+    top: 56px;
+    width: 10vw;
+    max-height: calc(100vh - 72px);
+    overflow: auto;
+    z-index: 25;
+    border-radius: 0 10px 10px 0;
+    padding: 10px 10px 12px 10px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px;
+    pointer-events: auto;
+  `;
+  panel.style.scrollbarWidth = 'none';
+  panel.style.msOverflowStyle = 'none';
+
+  if (!document.getElementById('flat-field-list-scrollbar-style')) {
+    const styleEl = document.createElement('style');
+    styleEl.id = 'flat-field-list-scrollbar-style';
+    styleEl.textContent = `
+      #flat-field-list-panel::-webkit-scrollbar {
+        width: 0;
+        height: 0;
+        display: none;
+      }
+    `;
+    document.head.appendChild(styleEl);
+  }
+
+  const header = document.createElement('div');
+  header.style.cssText = 'display:grid;gap:0;margin-bottom:0;';
+
+  const title = document.createElement('div');
+  title.textContent = '';
+  title.style.cssText = 'display:none;';
+  header.appendChild(title);
+  panel.appendChild(header);
+
+  const body = document.createElement('div');
+  body.style.cssText = 'display:grid;gap:6px;';
+  panel.appendChild(body);
+
+  document.body.appendChild(panel);
+  flatFieldListPanelEl = panel;
+  flatFieldListHeaderEl = header;
+  flatFieldListTitleEl = title;
+  flatFieldListBodyEl = body;
+}
+
+function updateFlatFieldListHeader() {
+  ensureFlatFieldListPanel();
+  if (!flatFieldListTitleEl) return;
+  flatFieldListTitleEl.textContent = '';
+}
+
+function applyFlatFieldListTheme() {
+  ensureFlatFieldListPanel();
+  if (!flatFieldListPanelEl) return;
+  flatFieldListPanelEl.style.display = SHOW_LEFT_DK_LIST_UI ? 'block' : 'none';
+  const t = THEMES[currentTheme];
+  flatFieldListPanelEl.style.background = t.uiBg;
+  flatFieldListPanelEl.style.color = t.uiColor;
+  flatFieldListPanelEl.style.border = `1px solid ${t.inputBorder}`;
+}
+
+function updateFlatFieldListSelectionStyles() {
+  if (!flatFieldListBodyEl) return;
+  const t = THEMES[currentTheme];
+  flatFieldListBodyEl.querySelectorAll('.flat-field-row').forEach((rowEl) => {
+    const rowD = Number(rowEl.dataset.discriminant);
+    const isSelected = selectedDiscriminant !== null && Number(selectedDiscriminant) === rowD;
+    const isHovered = hoveredDiscriminant !== null && Number(hoveredDiscriminant) === rowD;
+    if (isSelected) {
+      rowEl.style.border = `1px solid ${t.themeColor2}`;
+      rowEl.style.background = 'rgba(255, 0, 255, 0.10)';
+    } else if (isHovered) {
+      rowEl.style.border = `1px solid ${t.inputBorder}`;
+      rowEl.style.background = 'rgba(127, 127, 127, 0.12)';
+    } else {
+      rowEl.style.border = `1px solid ${t.inputBorder}`;
+      rowEl.style.background = 'rgba(127, 127, 127, 0.06)';
+    }
+  });
+}
+
+function listPrimesBelow(limit) {
+  const out = [];
+  for (let n = 2; n < limit; n++) {
+    let isPrime = true;
+    for (let d = 2; d * d <= n; d++) {
+      if (n % d === 0) {
+        isPrime = false;
+        break;
+      }
+    }
+    if (isPrime) out.push(n);
+  }
+  return out;
+}
+
+function ellAdicValuation(value, ell) {
+  let n = Math.abs(Number(value));
+  const prime = Number(ell);
+  if (!Number.isFinite(n) || !Number.isFinite(prime) || prime <= 1 || n <= 0) return 0;
+  let v = 0;
+  while (n % prime === 0) {
+    n /= prime;
+    v += 1;
+  }
+  return v;
+}
+
+function formatIntegerFactorization(n) {
+  const value = Number(n);
+  if (!Number.isFinite(value) || value < 1) return String(n);
+  if (value === 1) return '1';
+  const factors = [];
+  let remaining = Math.trunc(value);
+  let d = 2;
+  while (d * d <= remaining) {
+    while (remaining % d === 0) {
+      factors.push(d);
+      remaining /= d;
+    }
+    d++;
+  }
+  if (remaining > 1) factors.push(remaining);
+
+  const grouped = {};
+  factors.forEach((f) => {
+    grouped[f] = (grouped[f] || 0) + 1;
+  });
+
+  const superscripts = {'0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹'};
+  return Object.entries(grouped)
+    .map(([p, exp]) => {
+      if (exp === 1) return p;
+      const expStr = String(exp).split('').map((digit) => superscripts[digit]).join('');
+      return `${p}${expStr}`;
+    })
+    .join('·');
+}
+
+function renderFlatFieldList() {
+  ensureFlatFieldListPanel();
+  updateFlatFieldListHeader();
+  applyFlatFieldListTheme();
+  if (!flatFieldListBodyEl) return;
+
+  flatFieldListBodyEl.innerHTML = '';
+  if (!fieldData || fieldData.length === 0) {
+    const empty = document.createElement('div');
+    empty.textContent = 'No number-field data loaded.';
+    empty.style.opacity = '0.8';
+    flatFieldListBodyEl.appendChild(empty);
+    return;
+  }
+
+  const fields = [...fieldData].sort((a, b) => Number(b.discriminant) - Number(a.discriminant));
+  const qVal = Number.isFinite(q) ? Number(q) : (P ** N);
+  const qMinus1 = qVal - 1;
+  const smallPrimes = listPrimesBelow(100);
+  const qCompatiblePrimes = smallPrimes.filter((ell) => qMinus1 % ell === 0);
+
+  fields.forEach((nf) => {
+    const ordersSet = new Set();
+    const fullRankFpiEntries = [];
+
+    (nf.isogeny_classes || []).forEach((ic) => {
+      (ic.orders || []).forEach((order) => {
+        const c = Number(order.conductor);
+        if (Number.isFinite(c)) ordersSet.add(c);
+      });
+
+      const fPiRaw = Number(ic.f_pi);
+      const fPiFromOrders = (ic.orders && Array.isArray(ic.orders) && ic.orders.length > 0)
+        ? Math.max(...ic.orders.map(o => Number(o.conductor)).filter(Number.isFinite))
+        : NaN;
+      const fPi = Number.isFinite(fPiRaw) && fPiRaw > 0 ? fPiRaw : fPiFromOrders;
+      if (!Number.isFinite(fPi) || fPi <= 0) return;
+      const matchingElls = qCompatiblePrimes.filter((ell) => fPi % ell === 0);
+      if (matchingElls.length > 0) {
+        fullRankFpiEntries.push({ fPi, matchingElls });
+      }
+    });
+
+    const orders = [...ordersSet].sort((a, b) => a - b);
+    const hasFullRank = fullRankFpiEntries.length > 0;
+    const piBlue = `#${THEMES[currentTheme].sphere.piConductor.getHexString()}`;
+    const defaultTick = THEMES[currentTheme].themeColor2;
+    const highestFullRankEll = hasFullRank
+      ? Math.max(
+          ...fullRankFpiEntries
+            .flatMap(({ matchingElls }) => matchingElls)
+            .filter(Number.isFinite)
+        )
+      : null;
+    const maxEllTargetValuations = Number.isFinite(highestFullRankEll)
+      ? fullRankFpiEntries
+          .filter(({ matchingElls }) => matchingElls.includes(highestFullRankEll))
+          .map(({ fPi }) => ellAdicValuation(fPi, highestFullRankEll))
+          .filter((v) => Number.isFinite(v) && v > 0)
+      : [];
+
+    const row = document.createElement('div');
+    row.className = 'flat-field-row';
+    row.dataset.discriminant = String(Number(nf.discriminant));
+    row.style.cssText = `
+      display:grid;
+      grid-template-columns: 72px 1fr;
+      align-items:center;
+      gap:8px;
+      border-radius:8px;
+      padding:6px 8px;
+      cursor:pointer;
+    `;
+
+    const dLabel = document.createElement('div');
+    dLabel.innerHTML = hasFullRank && Number.isFinite(highestFullRankEll)
+      ? `D=${Number(nf.discriminant)} <span style="color:${piBlue};">•ℓ=${highestFullRankEll}</span>`
+      : `D=${Number(nf.discriminant)}`;
+    dLabel.style.cssText = 'font-size:11px;white-space:nowrap;';
+    row.appendChild(dLabel);
+
+    const track = document.createElement('div');
+    track.style.cssText = 'position:relative;height:22px;';
+
+    const line = document.createElement('div');
+    line.style.cssText = `
+      position:absolute;
+      left:0;
+      right:0;
+      top:50%;
+      transform:translateY(-50%);
+      height:1px;
+      background:${THEMES[currentTheme].axis};
+      opacity:0.75;
+    `;
+    track.appendChild(line);
+
+    if (orders.length > 0) {
+      const globalSpan = Number.isFinite(globalLogCondRange) && globalLogCondRange > 0
+        ? globalLogCondRange
+        : 1;
+
+      orders.forEach((c) => {
+        const logC = Math.log(c + 1);
+        const rawPct = ((logC - globalMinLogCond) / globalSpan) * 100;
+        const pct = Math.max(0, Math.min(100, rawPct));
+        const conductorValuation = Number.isFinite(highestFullRankEll)
+          ? ellAdicValuation(c, highestFullRankEll)
+          : 0;
+        const matched = maxEllTargetValuations.some((targetValuation) => conductorValuation < targetValuation);
+        const tick = document.createElement('div');
+        tick.title = matched && Number.isFinite(highestFullRankEll)
+          ? `f=${c} (v_${highestFullRankEll}(f)=${conductorValuation} < v_${highestFullRankEll}(f_π))`
+          : `f=${c}`;
+        const isSingle = orders.length === 1;
+        tick.style.cssText = `
+          position:absolute;
+          left:${pct}%;
+          top:50%;
+          transform:translate(-50%,-50%);
+          width:${isSingle ? 6 : 2}px;
+          height:${isSingle ? 6 : 10}px;
+          border-radius:${isSingle ? 999 : 2}px;
+          background:${matched ? piBlue : defaultTick};
+          opacity:0.9;
+        `;
+        track.appendChild(tick);
+      });
+    }
+
+    row.appendChild(track);
+    row.addEventListener('click', () => {
+      if (ui?.dInput) ui.dInput.value = String(Number(nf.discriminant));
+      if (ui?.onDSelect) ui.onDSelect(Number(nf.discriminant));
+    });
+    flatFieldListBodyEl.appendChild(row);
+  });
+
+  updateFlatFieldListSelectionStyles();
 }
 
 // ==================== CURVE RENDERING ====================
@@ -191,17 +494,69 @@ function applyTheme(name) {
   // CSS body + UI panel
   document.body.style.background = t.bodyBg;
   const uiEl = document.getElementById('ui');
+  const uiFqEl = document.getElementById('ui_fq');
+  const uiTopEl = document.getElementById('ui_top');
+  const conductorsListElDom = document.getElementById('conductors_list');
+  const selectedFieldBarEl = document.getElementById('selected_field_bar');
+  const selectedFieldLabelEl = document.getElementById('selected_field_label');
+  const selectedFieldValueEl = document.getElementById('selected_field_value');
+  const selectedCurveBarEl = document.getElementById('selected_curve_bar');
+  const selectedEllLabelEl = document.getElementById('selected_ell_label');
+  const selectedEllValueEl = document.getElementById('selected_ell_value');
+  const selectedCurveLabelEl = document.getElementById('selected_curve_label');
+  const selectedCurveValueEl = document.getElementById('selected_curve_value');
   if (uiEl) {
-    uiEl.style.background = t.uiBg;
+    uiEl.style.background = 'transparent';
     uiEl.style.color = t.uiColor;
   }
+  if (uiFqEl) {
+    uiFqEl.style.background = '#000';
+    uiFqEl.style.color = t.uiColor;
+    uiFqEl.style.borderBottom = `1px solid ${t.inputBorder}`;
+  }
+  if (uiTopEl) {
+    uiTopEl.style.background = 'transparent';
+    uiTopEl.style.color = t.uiColor;
+  }
+  if (conductorsListElDom) {
+    conductorsListElDom.style.background = 'transparent';
+    conductorsListElDom.style.color = '#fff';
+  }
+  if (selectedFieldBarEl) {
+    selectedFieldBarEl.style.background = t.uiBg;
+    selectedFieldBarEl.style.color = t.uiColor;
+    selectedFieldBarEl.style.border = `1px solid ${t.inputBorder}`;
+  }
+  if (selectedFieldLabelEl) {
+    selectedFieldLabelEl.style.color = t.uiColor;
+  }
+  if (selectedFieldValueEl) {
+    selectedFieldValueEl.style.color = t.themeColor2;
+  }
+  if (selectedCurveBarEl) {
+    selectedCurveBarEl.style.background = t.uiBg;
+    selectedCurveBarEl.style.color = t.uiColor;
+    selectedCurveBarEl.style.border = `1px solid ${t.inputBorder}`;
+  }
+  if (selectedEllLabelEl) {
+    selectedEllLabelEl.style.color = t.uiColor;
+  }
+  if (selectedEllValueEl) {
+    selectedEllValueEl.style.color = t.themeColor2;
+  }
+  if (selectedCurveLabelEl) {
+    selectedCurveLabelEl.style.color = t.uiColor;
+  }
+  if (selectedCurveValueEl) {
+    selectedCurveValueEl.style.color = t.themeColor2;
+  }
   // Update all inputs/selects/buttons inside UI
-  document.querySelectorAll('#ui input, #ui select, #ui button, #ui label').forEach(el => {
+  document.querySelectorAll('#ui input, #ui select, #ui button, #ui label, #ui_fq input, #ui_fq select, #ui_fq button, #ui_fq label, #ui_top input, #ui_top select, #ui_top button, #ui_top label').forEach(el => {
     el.style.background = t.inputBg;
     el.style.color = t.inputColor;
     el.style.borderColor = t.inputBorder;
   });
-  document.querySelectorAll('#ui .pill').forEach(el => {
+  document.querySelectorAll('#ui .pill, #ui_fq .pill, #ui_top .pill').forEach(el => {
     el.style.background = t.pillBg;
     el.style.color = t.uiColor;
   });
@@ -212,6 +567,11 @@ function applyTheme(name) {
   if (fieldInfoEl) {
     fieldInfoEl.style.color = t.labelColor;
   }
+  if (conductorsListEl) {
+    conductorsListEl.style.color = '#fff';
+  }
+  applyFlatFieldListTheme();
+  renderFlatFieldList();
 
   // Update theme button label
   const btn = document.getElementById('theme_toggle');
@@ -223,6 +583,105 @@ function applyTheme(name) {
     rebuildScene(ui.activeDiv);
     if (selectedDiscriminant !== null) drawCurvesForField(selectedDiscriminant);
   }
+}
+
+function updateSelectedFieldInfoBar(discriminant = selectedDiscriminant) {
+  if (!ui) return;
+  if (discriminant === null || discriminant === undefined || !fieldData) {
+    ui.clearSelectedField?.();
+    return;
+  }
+
+  const nf = fieldData.find(field => Number(field.discriminant) === Number(discriminant));
+  if (!nf) {
+    ui.clearSelectedField?.();
+    return;
+  }
+
+  const entries = [];
+  const seenAbsTraces = new Set();
+
+  (nf.isogeny_classes || [])
+    .slice()
+    .sort((a, b) => Number(a.trace) - Number(b.trace))
+    .forEach((ic) => {
+      const trace = Number(ic.trace);
+      const absTrace = Math.abs(trace);
+      if (seenAbsTraces.has(absTrace)) return;
+      seenAbsTraces.add(absTrace);
+
+      const conductors = (ic.orders || [])
+        .map((order) => Number(order.conductor))
+        .filter(Number.isFinite);
+      const fPiRaw = Number(ic.f_pi);
+      const fPi = Number.isFinite(fPiRaw) && fPiRaw > 0
+        ? fPiRaw
+        : (conductors.length > 0 ? Math.max(...conductors) : 1);
+
+      const traceLabel = absTrace === 0 ? 'I_{0}' : `I_{±${absTrace}}`;
+      entries.push(`${traceLabel}: f_pi = ${formatIntegerFactorization(fPi)}`);
+    });
+
+  ui.setSelectedField?.(entries.length > 0 ? entries.join(' | ') : '—');
+}
+
+function updateSelectedEllInfoBar(ell = selectedVolcanoEll) {
+  if (!ui) return;
+  if (ell === null || ell === undefined || ell === 'ALL' || String(ell).trim() === '') {
+    ui.clearSelectedEll?.();
+    return;
+  }
+
+  const ellNumber = Number(ell);
+  let displayValue = `ℓ=${ell}`;
+  let fPiValue = null;
+  if (selectedDiscriminant !== null && selectedVolcanoTrace !== null && fieldData) {
+    const nf = fieldData.find(field => Number(field.discriminant) === Number(selectedDiscriminant));
+    const ic = nf?.isogeny_classes?.find(item => Number(item.trace) === Number(selectedVolcanoTrace));
+    if (ic) {
+      const conductors = (ic.orders || [])
+        .map(order => Number(order.conductor))
+        .filter(Number.isFinite);
+      const fPiRaw = Number(ic.f_pi);
+      const fPi = Number.isFinite(fPiRaw) && fPiRaw > 0
+        ? fPiRaw
+        : (conductors.length > 0 ? Math.max(...conductors) : null);
+      if (Number.isFinite(fPi) && fPi > 0) {
+        fPiValue = fPi;
+        displayValue += ` | f_pi = ${formatIntegerFactorization(fPi)}`;
+      }
+    }
+  }
+
+  const curveSource = (selectedCurves && selectedCurves.length > 0)
+    ? selectedCurves
+    : (persistedCurveSelection ? [{ userData: persistedCurveSelection }] : []);
+  const selectedConductors = curveSource
+    .map((curve) => Number(curve?.userData?.conductor))
+    .filter(Number.isFinite);
+  const conductorSummary = formatFactorizationSummary(selectedConductors);
+  if (conductorSummary) {
+    const shouldHighlightFE = Number.isFinite(ellNumber)
+      && Number.isFinite(fPiValue)
+      && selectedConductors.some((conductor) => ellAdicValuation(conductor, ellNumber) < ellAdicValuation(fPiValue, ellNumber));
+    const fESegment = shouldHighlightFE
+      ? `<span style="color: ${THEMES[currentTheme].sphere.piConductor.getStyle()};">f_E = ${conductorSummary}</span>`
+      : `f_E = ${conductorSummary}`;
+    displayValue += ` | ${fESegment}`;
+  }
+
+  ui.setSelectedEll?.(displayValue, 'Volcano', { isHtml: displayValue.includes('<span') });
+}
+
+function resetVolcanoSelectionState() {
+  selectedVolcanoTrace = null;
+  selectedVolcanoEll = 'ALL';
+  if (ui) {
+    ui.selectedEll = 'ALL';
+    if (ui.ellSelect) ui.ellSelect.value = 'ALL';
+    ui.setActiveVolcano?.(null, null);
+  }
+  updateSelectedEllInfoBar('ALL');
 }
 
 function rebuildScene(div) {
@@ -429,6 +888,8 @@ function rebuildScene(div) {
     nrFieldsGroup.add(fieldGroup);
   });
 
+  renderFlatFieldList();
+
   // Add axes to left scene without conductor ticks (will be added on hover/select)
   const boxSize = 36 * 0.9;
   const halfBox = boxSize / 2;
@@ -468,6 +929,9 @@ const mouse = new THREE.Vector2();
 // Track selected curves in right box (can be multiple with same j)
 let selectedCurves = [];
 let hoveredCurves = [];
+let persistedCurveSelection = null;
+let secondarySelectedCurves = [];
+let persistedMinpolySelection = null;
 
 // Helper function to compare j-invariants (arrays or primitives)
 function jInvariantsEqual(j1, j2) {
@@ -504,8 +968,154 @@ function findCurvesWithJ(targetJ) {
   return matching;
 }
 
+function minpolyKey(value) {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return JSON.stringify(value);
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+function findCurvesWithMinpoly(targetMinpoly) {
+  const targetKey = minpolyKey(targetMinpoly);
+  if (!targetKey) return [];
+
+  const matching = [];
+  selectedFieldGroup.traverse(obj => {
+    if (obj.isMesh && obj.userData.curveID && minpolyKey(obj.userData.jMinpoly) === targetKey) {
+      matching.push(obj);
+    }
+  });
+  return matching;
+}
+
+function cloneCurveInvariant(value) {
+  if (Array.isArray(value)) return [...value];
+  return value ?? null;
+}
+
+function rememberCurveSelection(curves = []) {
+  const firstCurve = (curves || [])[0];
+  if (!firstCurve?.userData?.j) return;
+  persistedCurveSelection = {
+    j: cloneCurveInvariant(firstCurve.userData.j),
+    jMinpoly: firstCurve.userData.jMinpoly ?? null,
+    conductor: firstCurve.userData.conductor ?? null,
+  };
+}
+
+function clearRememberedCurveSelection() {
+  persistedCurveSelection = null;
+}
+
+function rememberMinpolySelection(curves = []) {
+  const firstCurve = (curves || [])[0];
+  const key = minpolyKey(firstCurve?.userData?.jMinpoly);
+  if (!key) return;
+  persistedMinpolySelection = {
+    key,
+    value: firstCurve.userData.jMinpoly,
+  };
+}
+
+function clearRememberedMinpolySelection() {
+  persistedMinpolySelection = null;
+}
+
+function formatJCoefficientArray(value) {
+  if (Array.isArray(value)) return `[${value.join(',')}]`;
+  return String(value ?? '');
+}
+
+function formatFactorizationSummary(values = []) {
+  const uniqueValues = [...new Set((values || []).map(Number).filter(Number.isFinite))];
+  if (uniqueValues.length === 0) return '';
+  const formatted = uniqueValues.map((value) => formatIntegerFactorization(value));
+  return formatted.length === 1
+    ? formatted[0]
+    : `${formatted[0]} (+${formatted.length - 1} more)`;
+}
+
+function updateSelectedCurveInfoBar(curves = selectedCurves) {
+  if (!ui) return;
+
+  const curvesToDescribe = (curves && curves.length > 0)
+    ? curves
+    : (persistedCurveSelection ? [{ userData: persistedCurveSelection }] : []);
+
+  const uniqueJValues = [];
+  const uniqueMinpolys = [];
+  const seen = new Set();
+  const seenMinpolys = new Set();
+
+  const formatMinpoly = (value) => {
+    if (value === null || value === undefined) return '';
+    if (Array.isArray(value)) return `[${value.join(',')}]`;
+    if (typeof value === 'object') {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
+    }
+    return String(value);
+  };
+
+  curvesToDescribe.forEach((curve) => {
+    const jValue = formatJCoefficientArray(curve?.userData?.j);
+    if (!jValue || seen.has(jValue)) return;
+    seen.add(jValue);
+    uniqueJValues.push(jValue);
+
+    const minpolyValue = formatMinpoly(curve?.userData?.jMinpoly);
+    if (minpolyValue && !seenMinpolys.has(minpolyValue)) {
+      seenMinpolys.add(minpolyValue);
+      uniqueMinpolys.push(minpolyValue);
+    }
+  });
+
+  if (uniqueJValues.length === 0) {
+    ui.clearSelectedCurveJInvariant?.();
+    updateSelectedEllInfoBar();
+    return;
+  }
+
+  const displayValue = uniqueJValues.length === 1
+    ? uniqueJValues[0]
+    : `${uniqueJValues[0]} (+${uniqueJValues.length - 1} more)`;
+
+  const minpolySuffix = uniqueMinpolys.length > 0
+    ? ` · minpoly: ${uniqueMinpolys.length === 1 ? uniqueMinpolys[0] : `${uniqueMinpolys[0]} (+${uniqueMinpolys.length - 1} more)`}`
+    : '';
+
+  ui.setSelectedCurveJInvariant?.(`${displayValue}${minpolySuffix}`);
+  updateSelectedEllInfoBar();
+}
+
+function restorePersistedCurveSelection() {
+  selectedCurves = persistedCurveSelection?.j
+    ? findCurvesWithJ(persistedCurveSelection.j)
+    : [];
+  secondarySelectedCurves = persistedMinpolySelection?.key
+    ? findCurvesWithMinpoly(persistedMinpolySelection.value)
+    : [];
+
+  syncCurveHighlights();
+  updateVolcanoEdgeHighlights();
+  updateSelectedCurveInfoBar();
+}
+
 function getHighlightColor() {
   return new THREE.Color(THEMES[currentTheme].themeColor2);
+}
+
+function getSecondaryHighlightColor() {
+  return THEMES[currentTheme].sphere.secondarySelected.clone();
 }
 
 function getVolcanoBaseEdgeColor() {
@@ -524,6 +1134,10 @@ function getCurveBaseColorByHeight(height) {
 
 function setCurveVisualState(curve, state = 'base') {
   if (!curve?.material?.color) return;
+  if (state === 'secondary') {
+    curve.material.color.copy(getSecondaryHighlightColor());
+    return;
+  }
   if (state === 'selected' || state === 'hover') {
     curve.material.color.copy(getHighlightColor());
     return;
@@ -532,12 +1146,32 @@ function setCurveVisualState(curve, state = 'base') {
   curve.material.color.copy(getCurveBaseColorByHeight(height));
 }
 
+function syncCurveHighlights() {
+  const primaryIDs = new Set((selectedCurves || []).map(curve => curve?.userData?.curveID).filter(Boolean));
+  const secondaryIDs = new Set((secondarySelectedCurves || []).map(curve => curve?.userData?.curveID).filter(Boolean));
+  const hoveredIDs = new Set((hoveredCurves || []).map(curve => curve?.userData?.curveID).filter(Boolean));
+
+  selectedFieldGroup.traverse(obj => {
+    if (!obj.isMesh || !obj.userData?.curveID) return;
+    if (primaryIDs.has(obj.userData.curveID)) {
+      setCurveVisualState(obj, 'selected');
+    } else if (secondaryIDs.has(obj.userData.curveID)) {
+      setCurveVisualState(obj, 'secondary');
+    } else if (hoveredIDs.has(obj.userData.curveID)) {
+      setCurveVisualState(obj, 'hover');
+    } else {
+      setCurveVisualState(obj, 'base');
+    }
+  });
+}
+
 function updateVolcanoEdgeHighlights() {
   const selectedIDs = new Set((selectedCurves || []).map(c => c?.userData?.curveID).filter(Boolean));
+  const secondaryIDs = new Set((secondarySelectedCurves || []).map(c => c?.userData?.curveID).filter(Boolean));
   const hoveredIDs = new Set((hoveredCurves || []).map(c => c?.userData?.curveID).filter(Boolean));
-  const activeIDs = selectedIDs.size > 0 ? selectedIDs : hoveredIDs;
 
   const activeColor = getHighlightColor();
+  const secondaryColor = getSecondaryHighlightColor();
 
   selectedFieldGroup.traverse(obj => {
     if (!(obj instanceof THREE.Line)) return;
@@ -545,10 +1179,18 @@ function updateVolcanoEdgeHighlights() {
 
     const baseColor = obj.userData.baseEdgeColor ?? getVolcanoBaseEdgeHex();
     const baseOpacity = obj.userData.baseEdgeOpacity ?? 0.95;
-    const isActive = activeIDs.size > 0 && (activeIDs.has(obj.userData.edgeFrom) || activeIDs.has(obj.userData.edgeTo));
+    const isPrimary = selectedIDs.size > 0 && (selectedIDs.has(obj.userData.edgeFrom) || selectedIDs.has(obj.userData.edgeTo));
+    const isSecondary = secondaryIDs.size > 0 && (secondaryIDs.has(obj.userData.edgeFrom) || secondaryIDs.has(obj.userData.edgeTo));
+    const isHovered = selectedIDs.size === 0
+      && secondaryIDs.size === 0
+      && hoveredIDs.size > 0
+      && (hoveredIDs.has(obj.userData.edgeFrom) || hoveredIDs.has(obj.userData.edgeTo));
 
-    if (isActive) {
+    if (isPrimary || isHovered) {
       obj.material.color.copy(activeColor);
+      obj.material.opacity = 0.95;
+    } else if (isSecondary) {
+      obj.material.color.copy(secondaryColor);
       obj.material.opacity = 0.95;
     } else {
       obj.material.color.setHex(baseColor);
@@ -582,21 +1224,25 @@ function onMouseMove(ev) {
     mouse.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
     
-    // Update crosshair
-    raycaster.setFromCamera(mouse, sceneManager.left.camera);
-    
-    // Create an invisible plane at the center of the scene to raycast against
-    const boxSize = 36 * 0.9;
-    const planeGeometry = new THREE.PlaneGeometry(boxSize, boxSize);
-    const planeMaterial = new THREE.MeshBasicMaterial({ visible: false });
-    const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-    plane.rotation.y = Math.PI / 2; // Orient plane perpendicular to camera view
-    
-    const planeHits = raycaster.intersectObject(plane);
-    
-    if (planeHits.length > 0) {
-      const hitPoint = planeHits[0].point;
-      updateLeftCrosshair(hitPoint);
+    if (SHOW_LEFT_CROSSHAIR) {
+      // Update crosshair
+      raycaster.setFromCamera(mouse, sceneManager.left.camera);
+
+      // Create an invisible plane at the center of the scene to raycast against
+      const boxSize = 36 * 0.9;
+      const planeGeometry = new THREE.PlaneGeometry(boxSize, boxSize);
+      const planeMaterial = new THREE.MeshBasicMaterial({ visible: false });
+      const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+      plane.rotation.y = Math.PI / 2; // Orient plane perpendicular to camera view
+
+      const planeHits = raycaster.intersectObject(plane);
+
+      if (planeHits.length > 0) {
+        const hitPoint = planeHits[0].point;
+        updateLeftCrosshair(hitPoint);
+      } else {
+        clearLeftCrosshair();
+      }
     } else {
       clearLeftCrosshair();
     }
@@ -629,6 +1275,7 @@ function onMouseMove(ev) {
         
         hoveredDiscriminant = newHoveredDiscriminant;
         hoveredConductor = newHoveredConductor;
+        updateFlatFieldListSelectionStyles();
       }
     }
   } else {
@@ -718,31 +1365,63 @@ function onCurveClick(ev) {
   const isAlreadySelected = selectedCurves.some(c => jInvariantsEqual(c.userData.j, targetJ));
   
   if (isAlreadySelected) {
-    // Deselect all with this j
-    selectedCurves.forEach(curve => {
-      setCurveVisualState(curve, 'base');
-    });
     selectedCurves = [];
+    clearRememberedCurveSelection();
+    syncCurveHighlights();
     updateVolcanoEdgeHighlights();
+    updateSelectedCurveInfoBar();
   } else {
-    // Clear previous selection
-    selectedCurves.forEach(curve => {
-      setCurveVisualState(curve, 'base');
-    });
     // Select all with this j
     selectedCurves = matchingCurves;
-    matchingCurves.forEach(curve => {
-      setCurveVisualState(curve, 'selected');
-    });
+    rememberCurveSelection(matchingCurves);
+    syncCurveHighlights();
     updateVolcanoEdgeHighlights();
+    updateSelectedCurveInfoBar();
     console.log(`Selected ${matchingCurves.length} curve(s) with j = ${mesh.userData.jFormatted}:`, 
                 matchingCurves.map(c => c.userData.curveID));
   }
 }
 
+function onCurveRightClick(ev) {
+  ev.preventDefault();
+  lastActiveSceneKey = 'right';
+
+  const rect = sceneManager.right.renderer.domElement.getBoundingClientRect();
+  mouse.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, sceneManager.right.camera);
+  const curveMeshes = [];
+  selectedFieldGroup.traverse(obj => {
+    if (obj.isMesh && obj.userData.curveID) {
+      curveMeshes.push(obj);
+    }
+  });
+
+  const hits = raycaster.intersectObjects(curveMeshes, false);
+  if (!hits.length) return;
+
+  const mesh = hits[0].object;
+  const targetMinpoly = mesh.userData.jMinpoly;
+  const targetKey = minpolyKey(targetMinpoly);
+  if (!targetKey) return;
+
+  const isAlreadySelected = secondarySelectedCurves.some(curve => minpolyKey(curve?.userData?.jMinpoly) === targetKey);
+  if (isAlreadySelected) {
+    secondarySelectedCurves = [];
+    clearRememberedMinpolySelection();
+  } else {
+    secondarySelectedCurves = findCurvesWithMinpoly(targetMinpoly);
+    rememberMinpolySelection(secondarySelectedCurves);
+  }
+
+  syncCurveHighlights();
+  updateVolcanoEdgeHighlights();
+}
+
 function onCurveMouseMove(ev) {
   lastActiveSceneKey = 'right';
-  if (selectedCurves.length > 0) return; // Don't hover if something is selected
+  if (selectedCurves.length > 0 || secondarySelectedCurves.length > 0) return; // Don't hover if something is selected
   
   const rect = sceneManager.right.renderer.domElement.getBoundingClientRect();
   mouse.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
@@ -765,23 +1444,19 @@ function onCurveMouseMove(ev) {
                           !jInvariantsEqual(newHoveredMesh.userData.j, hoveredCurves[0].userData.j);
   
   if (hoveredJChanged) {
-    // Restore previous hover
-    hoveredCurves.forEach(curve => {
-      setCurveVisualState(curve, 'base');
-    });
     hoveredCurves = [];
     
     // Apply new hover
     if (newHoveredMesh) {
       const matchingCurves = findCurvesWithJ(newHoveredMesh.userData.j);
       hoveredCurves = matchingCurves;
-      matchingCurves.forEach(curve => {
-        setCurveVisualState(curve, 'hover');
-      });
+      syncCurveHighlights();
       const aFormatted = formatJInvariant(newHoveredMesh.userData.a, P);
       const bFormatted = formatJInvariant(newHoveredMesh.userData.b, P);
       console.log(`Hovering ${matchingCurves.length} curve(s) with j=${newHoveredMesh.userData.jFormatted}, A=${aFormatted}, B=${bFormatted}:`,
                   matchingCurves.map(c => c.userData.curveID));
+    } else {
+      syncCurveHighlights();
     }
 
     updateVolcanoEdgeHighlights();
@@ -806,8 +1481,8 @@ function buildExportFilename(ext = 'png') {
     parts.push(`D${Number(selectedDiscriminant)}`);
   }
 
-  if (ui?.selectedEll && ui.selectedEll !== 'ALL' && Number.isFinite(Number(selectedVolcanoTrace))) {
-    parts.push(`ell${ui.selectedEll}`);
+  if (selectedVolcanoEll && selectedVolcanoEll !== 'ALL' && Number.isFinite(Number(selectedVolcanoTrace))) {
+    parts.push(`ell${selectedVolcanoEll}`);
     parts.push(`t${Number(selectedVolcanoTrace)}`);
   }
 
@@ -1259,8 +1934,9 @@ function drawSelectedDKVerticalTubes(discriminant, highlightedConductor = null, 
       ? fPiCandidates.reduce((best, p) => (p.y > best.y ? p : best), fPiCandidates[0])
       : null);
 
-  addDotTooltip(f1Point, '𝒪<sub>K</sub>', THEMES[currentTheme].themeColor2, 'ok');
-  addDotTooltip(fPiPoint, 'Z[π]', THEMES[currentTheme].themeColor2, 'zpi', { baseLift: -0.35, tickLen: 7.2 });
+  // Temporarily hide left-scene O_K / Z[π] tooltip labels and ticks.
+  // addDotTooltip(f1Point, '𝒪<sub>K</sub>', THEMES[currentTheme].themeColor2, 'ok');
+  // addDotTooltip(fPiPoint, 'Z[π]', THEMES[currentTheme].themeColor2, 'zpi', { baseLift: -0.35, tickLen: 7.2 });
 
   // D_K guide plane/tick label temporarily disabled.
 }
@@ -1359,23 +2035,41 @@ function restoreFieldColors(discriminant) {
 }
 
 function showFieldInfo(discriminant) {
-
-  if (!fieldInfoEl || !fieldData) return;
+  if (!fieldData) return;
   const nf = fieldData.find(f => Number(f.discriminant) === discriminant);
   if (!nf) return;
-  
-  const qDisplay = Number.isFinite(Number(q)) ? Number(q) : (P ** N);
-  let info = `<strong><span style="font-size: 32px;">𝔽<sub>${qDisplay}</sub></span></strong><br><strong>D = ${discriminant}</strong>`;
+
+  const uniqueConductors = [...new Set(
+    (nf.isogeny_classes || [])
+      .flatMap((ic) => (ic.orders ?? []).map((order) => Number(order.conductor)))
+      .filter(Number.isFinite)
+  )].sort((a, b) => a - b);
+
+  const uniqueFPi = [...new Set(
+    nf.isogeny_classes
+      .map(ic => {
+        const conductors = (ic.orders ?? [])
+          .map(order => Number(order.conductor))
+          .filter(Number.isFinite);
+        return conductors.length > 0 ? Math.max(...conductors) : null;
+      })
+      .filter(Number.isFinite)
+  )].sort((a, b) => a - b);
+  let info = `<strong>D_K = ${discriminant}</strong>`;
+  if (uniqueFPi.length > 0) {
+    const formattedFPi = uniqueFPi
+      .map((value) => formatIntegerFactorization(value))
+      .join(', ');
+    info += ` · <strong>f_pi ∈ {${formattedFPi}}</strong>`;
+  }
   if (nf.name) info += ` (${nf.name})`;
-  
-  // Get trace values and D_pi values
+
   const traces = nf.isogeny_classes.map(ic => ic.trace).sort((a, b) => a - b);
   const uniqueTraces = [...new Set(traces)];
-  
+
   info += `<br>${nf.isogeny_classes.length} isogeny class${nf.isogeny_classes.length !== 1 ? 'es' : ''}`;
   info += ` (t = ${uniqueTraces.join(', ')})`;
-  
-  // Show D_pi values for each isogeny class
+
   const dpiValues = nf.isogeny_classes
     .filter(ic => ic.D_pi !== undefined)
     .map(ic => `t=${ic.trace}: D_π=${ic.D_pi}`)
@@ -1383,7 +2077,7 @@ function showFieldInfo(discriminant) {
   if (dpiValues) {
     info += `<br>${dpiValues}`;
   }
-  
+
   // Group by conductor and collect class numbers
   const conductorMap = new Map();
   nf.isogeny_classes.forEach(ic => {
@@ -1395,19 +2089,19 @@ function showFieldInfo(discriminant) {
       conductorMap.get(conductor).push(order.class_number);
     });
   });
-  
-  if (conductorMap.size > 0) {
-    info += `<br><br><strong>Conductors:</strong>`;
-    const sortedConductors = Array.from(conductorMap.keys()).sort((a, b) => a - b);
-    sortedConductors.forEach(conductor => {
-      const classNumbers = conductorMap.get(conductor);
-      const uniqueClassNumbers = [...new Set(classNumbers)].sort((a, b) => a - b);
-      info += `<br>f = ${conductor}: num curves = ${uniqueClassNumbers.join(', ')}`;
-    });
+
+  if (fieldInfoEl) {
+    fieldInfoEl.innerHTML = info;
+    fieldInfoEl.style.display = SHOW_LEFT_DK_INFO_UI ? 'block' : 'none';
   }
-  
-  fieldInfoEl.innerHTML = info;
-  fieldInfoEl.style.display = 'block';
+  updateSelectedFieldInfoBar(discriminant);
+
+  if (conductorsListEl) {
+    conductorsListEl.innerHTML = uniqueConductors.length > 0
+      ? `<span style="color:#fff;">conductors: ${uniqueConductors.join(', ')}</span>`
+      : '<span style="color:#fff;">conductors: —</span>';
+    conductorsListEl.style.display = 'block';
+  }
 
   ui.updateStatus(nf);
 }
@@ -1416,6 +2110,10 @@ function hideFieldInfo() {
   if (fieldInfoEl) {
     fieldInfoEl.style.display = 'none';
   }
+  if (conductorsListEl) {
+    conductorsListEl.style.display = 'none';
+  }
+  updateSelectedFieldInfoBar(null);
   ui.updateStatus(null);
 }
 
@@ -1473,6 +2171,7 @@ async function toggleSelection(mesh) {
   if (hoveredDiscriminant !== null) {
     restoreFieldColors(hoveredDiscriminant);
     hoveredDiscriminant = null;
+    updateFlatFieldListSelectionStyles();
   }
   
   if (SELECTED.has(mesh)) {
@@ -1499,6 +2198,7 @@ async function toggleSelection(mesh) {
   
   drawCurvesForField(selectedDiscriminant);
   showFieldInfo(selectedDiscriminant);
+  updateFlatFieldListSelectionStyles();
 }
 
 function clearAllSelections() {
@@ -1517,6 +2217,15 @@ function clearAllSelections() {
   updateEllButtons();
 
   hideFieldInfo();
+  selectedCurves = [];
+  hoveredCurves = [];
+  secondarySelectedCurves = [];
+  clearRememberedCurveSelection();
+  clearRememberedMinpolySelection();
+  resetVolcanoSelectionState();
+  updateSelectedFieldInfoBar(null);
+  updateSelectedCurveInfoBar();
+  updateFlatFieldListSelectionStyles();
 }
 
 
@@ -1534,30 +2243,31 @@ addEventListener('resize', () => {
   labelRenderer = createLabelRenderer(document.getElementById('left'));
   const rightLabelRenderer = createLabelRenderer(document.getElementById('right'));
   
-  // Create field info display element
+  // Restore the original DK field info panel and bind the separate conductors list.
+  ensureFlatFieldListPanel();
   fieldInfoEl = document.createElement('div');
   fieldInfoEl.id = 'field-info';
   fieldInfoEl.style.cssText = `
-    position: absolute;
-    left: 12px;
-    bottom: 12px;
+    position: fixed;
+    left: calc(10vw + 50px);
+    top: 56px;
     background: transparent;
     color: ${THEMES[currentTheme].labelColor};
     padding: 0;
     border-radius: 0;
     font-family: ui-monospace, Menlo, Consolas, monospace;
-    font-size: 22px;
+    font-size: 13px;
     line-height: 1.4;
-    max-width: 400px;
+    width: 12vw;
+    max-width: 12vw;
     display: none;
     z-index: 30;
     pointer-events: none;
   `;
-  const leftPanel = document.getElementById('left');
-  if (leftPanel) {
-    leftPanel.appendChild(fieldInfoEl);
-  } else {
-    document.body.appendChild(fieldInfoEl);
+  document.body.appendChild(fieldInfoEl);
+  conductorsListEl = document.getElementById('conductors_list');
+  if (conductorsListEl) {
+    conductorsListEl.style.color = THEMES[currentTheme].labelColor;
   }
   FIELDS = await loadFields(P);
 
@@ -1592,7 +2302,9 @@ addEventListener('resize', () => {
   
 
   ui = new UI(P, N);
+  ui.setAvailableNValues?.(FIELDS.getAvailableNValues?.() || []);
     ui.setPiConductorColor?.(THEMES[currentTheme].sphere.piConductor.getStyle());
+  updateSelectedEllInfoBar('ALL');
   ui.onDivChange = (div) => rebuildScene(div);
   ui.onNChange = async (newN) => {
     try {
@@ -1607,6 +2319,7 @@ addEventListener('resize', () => {
       clearAllSelections();
       selectedCurves = [];
       hoveredCurves = [];
+      secondarySelectedCurves = [];
       
       // Load curves data for new N
       try {
@@ -1649,7 +2362,14 @@ addEventListener('resize', () => {
     }
   };
   ui.onEllChange = (ell) => {
+    selectedVolcanoEll = ell;
     selectedVolcanoTrace = null;
+    ui.setActiveVolcano?.(null, null);
+    updateSelectedEllInfoBar(ell);
+    if (selectedDiscriminant !== null) {
+      const nf = fieldData.find(field => Number(field.discriminant) === Number(selectedDiscriminant));
+      if (nf) ui.updateStatus(nf);
+    }
     // Redraw curves for the currently selected field with new ell filter
     if (selectedDiscriminant !== null) {
       drawCurvesForField(selectedDiscriminant);
@@ -1659,9 +2379,29 @@ addEventListener('resize', () => {
   // Listen for volcano row clicks
   window.addEventListener('volcanoRowClick', (e) => {
     const { ell, trace } = e.detail;
-    ui.selectedEll = ell;
+    const isAlreadySelected = Number(selectedVolcanoEll) === Number(ell)
+      && Number(selectedVolcanoTrace) === Number(trace);
+
+    if (isAlreadySelected) {
+      resetVolcanoSelectionState();
+      if (selectedDiscriminant !== null) {
+        const nf = fieldData.find(field => Number(field.discriminant) === Number(selectedDiscriminant));
+        if (nf) ui.updateStatus(nf);
+        drawCurvesForField(selectedDiscriminant);
+      }
+      return;
+    }
+
+  selectedVolcanoEll = ell;
+  ui.selectedEll = ell;
     ui.ellSelect.value = ell;
     selectedVolcanoTrace = trace;
+    ui.setActiveVolcano?.(ell, trace);
+    updateSelectedEllInfoBar(ell);
+    if (selectedDiscriminant !== null) {
+      const nf = fieldData.find(field => Number(field.discriminant) === Number(selectedDiscriminant));
+      if (nf) ui.updateStatus(nf);
+    }
     if (selectedDiscriminant !== null) {
       drawCurvesForField(selectedDiscriminant, trace);
     }
@@ -1758,16 +2498,11 @@ addEventListener('resize', () => {
             });
             
             // Clear previous curve selection
-            selectedCurves.forEach(curve => {
-              setCurveVisualState(curve, 'base');
-            });
-            
-            // Highlight matching curves
-            curvesToHighlight.forEach(curve => {
-              setCurveVisualState(curve, 'selected');
-            });
             selectedCurves = curvesToHighlight;
+            rememberCurveSelection(curvesToHighlight);
+            syncCurveHighlights();
             updateVolcanoEdgeHighlights();
+            updateSelectedCurveInfoBar();
           }, 100);
         } else {
           console.warn(`Could not find mesh for discriminant D=${foundField}`);
@@ -1800,12 +2535,11 @@ addEventListener('resize', () => {
       });
       
       if (curvesToSelect.length > 0) {
-        selectedCurves.forEach(curve => {
-          setCurveVisualState(curve, 'base');
-        });
-        curvesToSelect.forEach(curve => setCurveVisualState(curve, 'selected'));
         selectedCurves = curvesToSelect;
+        rememberCurveSelection(curvesToSelect);
+        syncCurveHighlights();
         updateVolcanoEdgeHighlights();
+        updateSelectedCurveInfoBar();
       } else {
         console.warn('No curves found with A:', targetA);
       }
@@ -1832,12 +2566,11 @@ addEventListener('resize', () => {
       });
       
       if (curvesToSelect.length > 0) {
-        selectedCurves.forEach(curve => {
-          setCurveVisualState(curve, 'base');
-        });
-        curvesToSelect.forEach(curve => setCurveVisualState(curve, 'selected'));
         selectedCurves = curvesToSelect;
+        rememberCurveSelection(curvesToSelect);
+        syncCurveHighlights();
         updateVolcanoEdgeHighlights();
+        updateSelectedCurveInfoBar();
       } else {
         console.warn('No curves found with B:', targetB);
       }
@@ -1958,6 +2691,7 @@ addEventListener('resize', () => {
   sceneManager.left.renderer.domElement.addEventListener('mousemove', onMouseMove);
   sceneManager.left.renderer.domElement.addEventListener('mouseenter', () => { lastActiveSceneKey = 'left'; });
   sceneManager.right.renderer.domElement.addEventListener('click', onCurveClick);
+  sceneManager.right.renderer.domElement.addEventListener('contextmenu', onCurveRightClick);
   sceneManager.right.renderer.domElement.addEventListener('mousemove', onCurveMouseMove);
   sceneManager.right.renderer.domElement.addEventListener('mouseenter', () => { lastActiveSceneKey = 'right'; });
 
@@ -1987,8 +2721,26 @@ addEventListener('resize', () => {
 
 // Collect all ell values from loaded data and populate UI
 // If discriminant is provided, only show ells from that specific field
+function primeDivisors(n) {
+  let value = Math.abs(Number(n));
+  if (!Number.isFinite(value) || value < 2) return [];
+
+  const divisors = [];
+  let factor = 2;
+  while (factor * factor <= value) {
+    if (value % factor === 0) {
+      divisors.push(factor);
+      while (value % factor === 0) value /= factor;
+    }
+    factor += (factor === 2 ? 1 : 2);
+  }
+  if (value > 1) divisors.push(value);
+  return divisors;
+}
+
 function updateEllButtons(discriminant = null) {
   const ellSet = new Set();
+  const qValue = P ** N;
   
   if (fieldData) {
     const fieldsToScan = discriminant !== null 
@@ -1997,16 +2749,20 @@ function updateEllButtons(discriminant = null) {
     
     fieldsToScan.forEach(nf => {
       nf.isogeny_classes.forEach(ic => {
-        if (ic.volcanoes) {
-          for (const volcano of ic.volcanoes) {
-            ellSet.add(volcano.ell);
-          }
-        }
+        const trace = Number(ic.trace);
+        if (!Number.isFinite(trace)) return;
+
+        const groupOrder = qValue + 1 - trace;
+        primeDivisors(groupOrder)
+          .filter((ell) => ell < 100)
+          .forEach((ell) => ellSet.add(ell));
       });
     });
   }
   
   ui.populateEllSelect([...ellSet]);
+  selectedVolcanoEll = 'ALL';
+  updateSelectedEllInfoBar('ALL');
 }
 
 // ==================== CURVE VISUALIZATION ====================
@@ -2353,6 +3109,9 @@ function computeComponentOffsets(componentRadii, boxSize) {
 function drawCurvesForField(discriminant, traceFilter = null) {
   // Clear previous curve visualizations
   selectedFieldGroup.clear();
+  selectedCurves = [];
+  hoveredCurves = [];
+  secondarySelectedCurves = [];
 
   const oldConductorLabels = sceneManager.right.scene.getObjectByName('right-conductor-rim-labels');
   if (oldConductorLabels) {
@@ -2387,7 +3146,7 @@ function drawCurvesForField(discriminant, traceFilter = null) {
   const minCircleRadius = 0.9; // Larger minimum default circle radius
   
   // Get selected ell filter
-  const selectedEll = ui.selectedEll;
+  const selectedEll = selectedVolcanoEll;
   const activeVolcanoTrace = traceFilter !== null ? Number(traceFilter) : selectedVolcanoTrace;
   const volcanoFocusMode = layoutMode === 'circle' && selectedEll !== 'ALL' && activeVolcanoTrace !== null;
   const volcanoFlagCacheKey = volcanoFocusMode
@@ -2463,25 +3222,32 @@ function drawCurvesForField(discriminant, traceFilter = null) {
     }
     return `f=${uniqueConductors[bestIdx]}`;
   };
-  addCubeEdgeAxes(sceneManager.right.scene, (x, y, z) => new THREE.Vector3(x, y, z), {
-    x: { domain: [-halfW, halfW], ticks: [], label: v => '' },
-    y: { 
-      domain: [-halfH, halfH], 
-      ticks: conductorTicks,
-      label: conductorLabelForY
-    },
-    z: { domain: [-halfW, halfW], ticks: [], label: v => '' },
-    tickLen: 4.8, 
-    labelOffset: 1.5,
-    labelColor: THEMES[currentTheme].themeColor2,
-    tickColor: THEMES[currentTheme].themeColor2,
-    tickOutwardOnly: true,
-    showEdges: false,
-    color: THEMES[currentTheme].axis
-  });
+  const showRightConductorAxis = false;
+  if (showRightConductorAxis) {
+    addCubeEdgeAxes(sceneManager.right.scene, (x, y, z) => new THREE.Vector3(x, y, z), {
+      x: { domain: [-halfW, halfW], ticks: [], label: v => '' },
+      y: {
+        domain: [-halfH, halfH],
+        ticks: conductorTicks,
+        label: conductorLabelForY
+      },
+      z: { domain: [-halfW, halfW], ticks: [], label: v => '' },
+      tickLen: 4.8,
+      labelOffset: 1.5,
+      labelColor: THEMES[currentTheme].themeColor2,
+      tickColor: THEMES[currentTheme].themeColor2,
+      tickOutwardOnly: true,
+      showEdges: false,
+      color: THEMES[currentTheme].axis
+    });
+  }
 
-  const axisLines = sceneManager.right.scene.getObjectByName('axes-lines');
-  const axisLabels = sceneManager.right.scene.getObjectByName('axes-labels');
+  const axisLines = showRightConductorAxis
+    ? sceneManager.right.scene.getObjectByName('axes-lines')
+    : null;
+  const axisLabels = showRightConductorAxis
+    ? sceneManager.right.scene.getObjectByName('axes-labels')
+    : null;
 
   // Clear any previous right-side conductor grid group.
   drawConductorGrid(sceneManager.right.scene, {
@@ -2577,7 +3343,7 @@ function drawCurvesForField(discriminant, traceFilter = null) {
   const traces = nf.isogeny_classes.map(ic => ic.trace);
   const uniqueTraces = [...new Set(traces)].sort((a, b) => a - b);
   
-  const showTraceFlags = false;
+  const showTraceFlags = true;
   if (showTraceFlags) nf.isogeny_classes.forEach((ic, traceIndex) => {
     const trace = ic.trace;
 
@@ -2994,6 +3760,7 @@ function drawCurvesForField(discriminant, traceFilter = null) {
           curveID: curve.ID,
           j: curve.j,
           jFormatted: formatJInvariant(curve.j, P),
+          jMinpoly: curve.j_minpoly,
           a: curve.A,
           b: curve.B,
           conductor: conductor,
@@ -3264,85 +4031,88 @@ function drawCurvesForField(discriminant, traceFilter = null) {
   const rightAxisFlagGap = Math.max(0.35, sphereRadius * 1.05);
   const rightAxisFlagLen = Math.max(1.8, rightAxisTickLen * 0.55);
 
-  const tickPlacements = [];
-  axisLines?.children?.forEach((obj) => {
-    const conductorForObj = nearestConductorForY(obj?.position?.y);
-    const anchor = getConductorFlagAnchor(conductorForObj, obj);
-    const levelRadius = anchor.radius ?? 0;
-    const anchorRadius = Math.max(sphereRadius, levelRadius) + rightAxisFlagGap;
-    const { nearest, dir2 } = anchor;
+  const showRightConductorFlags = false;
+  if (showRightConductorFlags) {
+    const tickPlacements = [];
+    axisLines?.children?.forEach((obj) => {
+      const conductorForObj = nearestConductorForY(obj?.position?.y);
+      const anchor = getConductorFlagAnchor(conductorForObj, obj);
+      const levelRadius = anchor.radius ?? 0;
+      const anchorRadius = Math.max(sphereRadius, levelRadius) + rightAxisFlagGap;
+      const { nearest, dir2 } = anchor;
 
-    // Tick starts just outside the ring/dot and extends a short distance outward.
-    const baseLen = (obj?.geometry?.parameters?.height ?? rightAxisTickLen);
-    if (Number.isFinite(baseLen) && baseLen > 1e-9) {
-      const currentScaleX = Number(obj?.scale?.x) || 1;
-      const currentScaleZ = Number(obj?.scale?.z) || 1;
-      obj.scale.set(currentScaleX, rightAxisFlagLen / baseLen, currentScaleZ);
-    }
+      // Tick starts just outside the ring/dot and extends a short distance outward.
+      const baseLen = (obj?.geometry?.parameters?.height ?? rightAxisTickLen);
+      if (Number.isFinite(baseLen) && baseLen > 1e-9) {
+        const currentScaleX = Number(obj?.scale?.x) || 1;
+        const currentScaleZ = Number(obj?.scale?.z) || 1;
+        obj.scale.set(currentScaleX, rightAxisFlagLen / baseLen, currentScaleZ);
+      }
 
-    const dir3 = new THREE.Vector3(dir2.x, 0, dir2.y);
-    obj.position.set(
-      nearest.x + dir2.x * (anchorRadius + rightAxisFlagLen * 0.5),
-      Number(obj?.position?.y) || 0,
-      nearest.y + dir2.y * (anchorRadius + rightAxisFlagLen * 0.5)
-    );
-    obj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir3.normalize());
+      const dir3 = new THREE.Vector3(dir2.x, 0, dir2.y);
+      obj.position.set(
+        nearest.x + dir2.x * (anchorRadius + rightAxisFlagLen * 0.5),
+        Number(obj?.position?.y) || 0,
+        nearest.y + dir2.y * (anchorRadius + rightAxisFlagLen * 0.5)
+      );
+      obj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir3.normalize());
 
-    tickPlacements.push({
-      conductor: Number(conductorForObj),
-      nearest: nearest.clone(),
-      dir2: dir2.clone(),
-      anchorRadius,
-      tickEndRadius: anchorRadius + rightAxisFlagLen,
-      y: Number(obj?.position?.y) || 0
+      tickPlacements.push({
+        conductor: Number(conductorForObj),
+        nearest: nearest.clone(),
+        dir2: dir2.clone(),
+        anchorRadius,
+        tickEndRadius: anchorRadius + rightAxisFlagLen,
+        y: Number(obj?.position?.y) || 0
+      });
     });
-  });
 
-  const rightAxisLabelMargin = 2.4;
-  axisLabels?.traverse?.((obj) => {
-    if (obj instanceof CSS2DObject && obj.element?.parentNode) {
-      obj.element.parentNode.removeChild(obj.element);
-    }
-  });
-  axisLabels?.clear?.();
+    const rightAxisLabelMargin = 2.4;
+    axisLabels?.traverse?.((obj) => {
+      if (obj instanceof CSS2DObject && obj.element?.parentNode) {
+        obj.element.parentNode.removeChild(obj.element);
+      }
+    });
+    axisLabels?.clear?.();
 
-  const conductorLabelsGroup = new THREE.Group();
-  conductorLabelsGroup.name = 'right-conductor-rim-labels';
-  sceneManager.right.scene.add(conductorLabelsGroup);
+    const conductorLabelsGroup = new THREE.Group();
+    conductorLabelsGroup.name = 'right-conductor-rim-labels';
+    sceneManager.right.scene.add(conductorLabelsGroup);
 
-  const uniqueTickPlacements = [];
-  const seenConductorTicks = new Set();
-  tickPlacements.forEach((tp) => {
-    const conductorKey = Number(tp?.conductor);
-    if (!Number.isFinite(conductorKey) || seenConductorTicks.has(conductorKey)) return;
-    seenConductorTicks.add(conductorKey);
-    uniqueTickPlacements.push(tp);
-  });
+    const uniqueTickPlacements = [];
+    const seenConductorTicks = new Set();
+    tickPlacements.forEach((tp) => {
+      const conductorKey = Number(tp?.conductor);
+      if (!Number.isFinite(conductorKey) || seenConductorTicks.has(conductorKey)) return;
+      seenConductorTicks.add(conductorKey);
+      uniqueTickPlacements.push(tp);
+    });
 
-  uniqueTickPlacements.forEach((tp) => {
-    const labelDiv = document.createElement('div');
-    labelDiv.style.color = THEMES[currentTheme].themeColor2;
-    labelDiv.style.fontSize = '24px';
-    labelDiv.style.lineHeight = '1';
-    labelDiv.style.whiteSpace = 'nowrap';
-    labelDiv.style.fontFamily = 'ui-monospace, monospace';
-    labelDiv.style.pointerEvents = 'none';
-    labelDiv.style.background = 'transparent';
-    labelDiv.style.padding = '0';
-    labelDiv.textContent = `f=${tp.conductor}`;
+    uniqueTickPlacements.forEach((tp) => {
+      const labelDiv = document.createElement('div');
+      labelDiv.style.color = THEMES[currentTheme].themeColor2;
+      labelDiv.style.fontSize = '24px';
+      labelDiv.style.lineHeight = '1';
+      labelDiv.style.whiteSpace = 'nowrap';
+      labelDiv.style.fontFamily = 'ui-monospace, monospace';
+      labelDiv.style.pointerEvents = 'none';
+      labelDiv.style.background = 'transparent';
+      labelDiv.style.padding = '0';
+      labelDiv.textContent = `f=${tp.conductor}`;
 
-    const label = new CSS2DObject(labelDiv);
-    label.center.set(0.5, 0.5);
-    const labelDistance = tp.tickEndRadius + rightAxisLabelMargin;
-    label.position.set(
-      tp.nearest.x + tp.dir2.x * labelDistance,
-      tp.y,
-      tp.nearest.y + tp.dir2.y * labelDistance
-    );
-    conductorLabelsGroup.add(label);
-  });
+      const label = new CSS2DObject(labelDiv);
+      label.center.set(0.5, 0.5);
+      const labelDistance = tp.tickEndRadius + rightAxisLabelMargin;
+      label.position.set(
+        tp.nearest.x + tp.dir2.x * labelDistance,
+        tp.y,
+        tp.nearest.y + tp.dir2.y * labelDistance
+      );
+      conductorLabelsGroup.add(label);
+    });
+  }
 
-  updateVolcanoEdgeHighlights();
+  restorePersistedCurveSelection();
 }
 
 

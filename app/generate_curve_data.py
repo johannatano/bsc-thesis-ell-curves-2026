@@ -93,11 +93,11 @@ def generate(p: int, n: int, t_list: list[int], to_db: bool = False, db_path: st
     q = p**n
     print(f"\n=== Processing q={q}.... ===")
     
-    #NFC = NumberFieldsClassifier_Fq(p)
-    #nf = NFC.generate([n], q_max=q+1, t_list=t_list)
-    CC = CurvesClassifier_Fq(p, n, NF=None)
+    NFC = NumberFieldsClassifier_Fq(p)
+    nf = NFC.generate([n], q_max=q+1, t_list=t_list)
+    CC = CurvesClassifier_Fq(p, n, NF=nf)
     
-    CC.enumerate_curves(use_HCP=False, add_SS=False) #we dont need the SS curves for the viz
+    CC.enumerate_curves(use_HCP=True, add_SS=False) #we dont need the SS curves for the viz
     CC.compute_volcano(edges=True)
     out = CC.toJSON()
     if to_db:

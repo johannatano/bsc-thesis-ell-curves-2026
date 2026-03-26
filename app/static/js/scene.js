@@ -34,7 +34,9 @@ export class SceneManager {
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     container.appendChild(renderer.domElement);
     const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 5000);
-    camera.position.set(0, 0, 60);
+    camera.position.set(0, 3.5, 56);
+    camera.zoom = 1.08;
+    camera.updateProjectionMatrix();
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     scene.userData.camera = camera;
@@ -134,10 +136,13 @@ export class SceneManager {
 
     if (!preserveCamera) {
       const diag = Math.sqrt((box * pad) ** 2 * 3);
-      this.left.camera.position.set(0, 0, diag * 1.2);
-      this.left.controls.target.set(0, 0, 0);
-      this.right.camera.position.set(0, 0, diag * 1.2);
-      this.right.controls.target.set(0, 0, 0);
+      const yOffset = box * pad * 0.1;
+      this.left.camera.position.set(0, yOffset, diag * 1.08);
+      this.left.controls.target.set(0, yOffset, 0);
+      this.right.camera.position.set(0, yOffset, diag * 1.08);
+      this.right.controls.target.set(0, yOffset, 0);
+      this.left.camera.zoom = 1.08;
+      this.right.camera.zoom = 0.92;
       this.left.camera.updateProjectionMatrix();
       this.right.camera.updateProjectionMatrix();
     }

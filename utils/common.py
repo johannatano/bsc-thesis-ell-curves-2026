@@ -108,3 +108,6 @@ class Config:
     """Global runtime configuration, set once from CLI args."""
     rank_method: str = "mod_poly"  # "auto" | "div_poly" | "mod_poly" | "invariants"
     use_true_height: bool = False
+
+
+

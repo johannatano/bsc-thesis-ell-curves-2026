@@ -8,8 +8,16 @@ export class UI {
     this.selectedEll = 'ALL';
     
     this.statusEl = document.getElementById('status');
-    this.nButtons = document.querySelectorAll('input[name="n_select"]');
+    this.nSelect = document.getElementById('n_select');
     this.ellSelect = document.getElementById('ell_select');
+    this.selectedFieldBarEl = document.getElementById('selected_field_bar');
+    this.selectedFieldLabelEl = document.getElementById('selected_field_label');
+    this.selectedFieldValueEl = document.getElementById('selected_field_value');
+    this.selectedCurveBarEl = document.getElementById('selected_curve_bar');
+    this.selectedEllLabelEl = document.getElementById('selected_ell_label');
+    this.selectedEllValueEl = document.getElementById('selected_ell_value');
+    this.selectedCurveLabelEl = document.getElementById('selected_curve_label');
+    this.selectedCurveValueEl = document.getElementById('selected_curve_value');
     this.divVal = document.getElementById('divVal');
     this.dInput = document.getElementById('d_input');
     this.jInput = document.getElementById('j_input');
@@ -34,6 +42,28 @@ export class UI {
     this.onBSelect = null; // callback for B input
     this.onLayoutToggle = null; // callback for layout mode toggle
     this.piConductorColor = '#3da3ff';
+    this.activeVolcanoEll = null;
+    this.activeVolcanoTrace = null;
+  }
+
+  setActiveVolcano(ell = null, trace = null) {
+    this.activeVolcanoEll = ell === null || ell === undefined || ell === 'ALL' ? null : Number(ell);
+    this.activeVolcanoTrace = trace === null || trace === undefined ? null : Number(trace);
+  }
+
+  setAvailableNValues(nValues) {
+    if (!this.nSelect) return;
+    this.nSelect.innerHTML = '';
+    const rawValues = [...new Set((nValues || []).map(Number).filter(Number.isFinite))].sort((a, b) => a - b);
+    const maxN = rawValues.length ? Math.max(...rawValues) : this.N;
+    const values = Array.from({ length: Math.max(1, maxN) }, (_, i) => i + 1);
+    values.forEach((n) => {
+      const option = document.createElement('option');
+      option.value = String(n);
+      option.textContent = `𝔽_${this.P ** n} (p=${this.P}, n=${n})`;
+      if (n === this.N) option.selected = true;
+      this.nSelect.appendChild(option);
+    });
   }
 
   setPiConductorColor(color) {
@@ -41,13 +71,11 @@ export class UI {
   }
 
   init() {
-    // Set initial selected button
-    this.nButtons.forEach(btn => {
-      if (Number(btn.value) === this.N) {
-        btn.checked = true;
-      }
-      btn.addEventListener('change', () => this.handleButtonChange(btn));
-    });
+    if (this.nSelect) {
+      this.nSelect.addEventListener('change', (e) => {
+        this.handleNSelectChange(Number(e.target.value));
+      });
+    }
     this.updateDisplay();
     
     // Add event listener for ℓ select dropdown
@@ -110,8 +138,7 @@ export class UI {
     }
   }
 
-  handleButtonChange(btn) {
-    const newN = Number(btn.value);
+  handleNSelectChange(newN) {
     this.updateDisplay();
     
     // Only trigger reload if N actually changed
@@ -123,9 +150,9 @@ export class UI {
   }
 
   updateDisplay() {
-    const selectedBtn = Array.from(this.nButtons).find(btn => btn.checked);
-    const n = selectedBtn ? Number(selectedBtn.value) : this.N;
-    if (this.divVal) this.divVal.textContent = ` ${this.P}^${n} `;
+    const n = this.nSelect ? Number(this.nSelect.value || this.N) : this.N;
+    this.q = this.P ** n;
+    if (this.divVal) this.divVal.textContent = ` ${this.q} `;
     const nSup = document.getElementById('nSup');
     if (nSup) nSup.textContent = ` ${n} `;
   }
@@ -172,48 +199,48 @@ export class UI {
         .join('·');
     };
 
-    let infoStr = '<strong>Isogeny Classes:</strong><br>';
-    infoStr += '<div style="display: flex; gap: 16px; flex-wrap: wrap; margin-top: 6px;">';
+    const classCount = Math.max(1, isogeny_classes.length);
+    const availableWidth = Math.max(260, Math.floor(window.innerWidth * 0.5) - 40);
+    const gapPx = Math.max(2, Math.min(8, Math.floor(availableWidth / Math.max(16 * classCount, 1))));
+    const columnWidthPx = Math.max(92, Math.floor((availableWidth - gapPx * (classCount - 1)) / classCount));
+
+    let infoStr = '';
+    infoStr += `<div style="display: flex; gap: ${gapPx}px; flex-wrap: nowrap; align-items: flex-start; margin-top: 4px; width: 100%; white-space: nowrap;">`;
     
-    isogeny_classes.forEach(ic => {
+    [...isogeny_classes].reverse().forEach(ic => {
       const t = ic.trace;
       const N_pts = this.q + 1 - t;
-      const f_pi = ic.f_pi || 'N/A';
       const factorization = primeFactorization(N_pts);
-      const factorization_f_pi = primeFactorization(f_pi);
       // Create a column for each isogeny class
-      infoStr += '<div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px; min-width: 240px;">';
+      infoStr += `<div style="background: transparent; padding: 2px 4px; border-radius: 6px; width: ${columnWidthPx}px; min-width: ${columnWidthPx}px; white-space: nowrap; overflow: hidden; text-align: center;">`;
       infoStr += `<strong>t: ${t}</strong>`;
-      infoStr += ` | f_π: ${f_pi} = ${factorization_f_pi}<br>`;
-      infoStr += `#E: ${N_pts} = `;
-      infoStr += `${factorization}`;
+      infoStr += ` | #E: ${factorization}`;
       
       
       // Show volcanoes for this isogeny class
       if (ic.volcanoes && ic.volcanoes.length > 0) {
         infoStr += `<div style="margin-top: 4px;">`;
-        infoStr += `<strong>Volcanoes:</strong><br>`;
         ic.volcanoes.forEach(volcano => {
           const fx_roots = volcano.fx_roots ? `[${volcano.fx_roots.join(', ')}]` : '[]';
           // Calculate max height from levels
           const maxHeight = volcano.levels && volcano.levels.length > 0 
             ? Math.max(...volcano.levels.map(level => level.h))
             : 0;
-          // Calculate boolean checks: ℓ | (q-1) and ℓ | (t-2)
-          const dividesQMinus1 = (this.q - 1) % volcano.ell === 0;
-          const dividesTMinus2 = (t - 2) % volcano.ell === 0;
-          const check1 = dividesQMinus1 ? '✓' : '✗';
-          const check2 = dividesTMinus2 ? '✓' : '✗';
           // Use theme-aware pi-conductor color if height > 0
-          const rowColor = maxHeight > 0 ? this.piConductorColor : 'inherit';
-          infoStr += `<span class="volcano-row" data-ell="${volcano.ell}" data-trace="${t}" style="color: ${rowColor}; cursor: pointer; text-decoration: underline;">ℓ=${volcano.ell}: ${fx_roots}, h=${maxHeight}, ℓ|(q-1): ${check1}, ℓ|(t-2): ${check2}</span><br>`;
+          const isActiveVolcano = Number(this.activeVolcanoEll) === Number(volcano.ell)
+            && Number(this.activeVolcanoTrace) === Number(t);
+          const rowColor = isActiveVolcano
+            ? '#ff00ff'
+            : (maxHeight > 0 ? this.piConductorColor : 'inherit');
+          const rowStyle = `color: ${rowColor}; cursor: pointer; text-decoration: underline; font-size: 11px;`;
+          infoStr += `<span class="volcano-row" data-ell="${volcano.ell}" data-trace="${t}" style="${rowStyle}">ℓ=${volcano.ell}: ${fx_roots}, h=${maxHeight}</span><br>`;
         });
         infoStr += `</div>`;
       }
       infoStr += '</div>';
     });
     
-    infoStr += '</div>';
+    infoStr += '</div></div>';
     
     setStatus(this.statusEl, infoStr);
   }
@@ -229,15 +256,16 @@ export class UI {
     while (this.ellSelect.options.length > 1) {
       this.ellSelect.remove(1);
     }
+
+    if (this.ellSelect.options.length > 0) {
+      this.ellSelect.options[0].textContent = 'ℓ';
+    }
     
     // Add options for each ell value
     ellValues.sort((a, b) => a - b).forEach(ell => {
       const option = document.createElement('option');
       option.value = ell;
-      
-      // Check if ell divides q-1 and mark with indicator
-      const dividesQMinus1 = (this.q - 1) % ell === 0;
-      option.textContent = dividesQMinus1 ? `ℓ=${ell} ✓` : `ℓ=${ell}`;
+      option.textContent = `ℓ=${ell}`;
       
       this.ellSelect.appendChild(option);
     });
@@ -252,5 +280,61 @@ export class UI {
     if (this.onEllChange) {
       this.onEllChange(ell);
     }
+  }
+
+  updateSelectedBarEmptyState() {
+    if (!this.selectedCurveBarEl) return;
+    const hasCurve = Boolean(this.selectedCurveValueEl && this.selectedCurveValueEl.textContent && this.selectedCurveValueEl.textContent !== '—');
+    const hasEll = Boolean(this.selectedEllValueEl && this.selectedEllValueEl.textContent && this.selectedEllValueEl.textContent !== '—');
+    this.selectedCurveBarEl.classList.toggle('is-empty', !hasCurve && !hasEll);
+  }
+
+  setSelectedEll(value, label = 'Volcano', { isHtml = false } = {}) {
+    if (this.selectedEllLabelEl) {
+      this.selectedEllLabelEl.textContent = label;
+    }
+    if (!this.selectedEllValueEl) return;
+
+    const hasValue = typeof value === 'string' && value.trim().length > 0;
+    if (isHtml && hasValue) {
+      this.selectedEllValueEl.innerHTML = value;
+    } else {
+      this.selectedEllValueEl.textContent = hasValue ? value : '—';
+    }
+    this.updateSelectedBarEmptyState();
+  }
+
+  clearSelectedEll() {
+    this.setSelectedEll('');
+  }
+
+  setSelectedField(value, label = 'Selected field') {
+    if (this.selectedFieldLabelEl) {
+      this.selectedFieldLabelEl.textContent = label;
+    }
+    if (!this.selectedFieldBarEl || !this.selectedFieldValueEl) return;
+
+    const hasValue = typeof value === 'string' && value.trim().length > 0;
+    this.selectedFieldValueEl.textContent = hasValue ? value : '—';
+    this.selectedFieldBarEl.classList.toggle('is-empty', !hasValue);
+  }
+
+  clearSelectedField() {
+    this.setSelectedField('');
+  }
+
+  setSelectedCurveJInvariant(value, label = 'Selected curve j') {
+    if (this.selectedCurveLabelEl) {
+      this.selectedCurveLabelEl.textContent = label;
+    }
+    if (!this.selectedCurveBarEl || !this.selectedCurveValueEl) return;
+
+    const hasValue = typeof value === 'string' && value.trim().length > 0;
+    this.selectedCurveValueEl.textContent = hasValue ? value : '—';
+    this.updateSelectedBarEmptyState();
+  }
+
+  clearSelectedCurveJInvariant() {
+    this.setSelectedCurveJInvariant('');
   }
 }

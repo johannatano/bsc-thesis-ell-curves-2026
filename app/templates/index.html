@@ -8,11 +8,146 @@
     #top { position:absolute; inset:0; display:grid; grid-template-columns:1fr 1fr; gap:0; }
     .panel { position:relative; }
     canvas { display:block; width:100%; height:100%; }
+    .minimal-control {
+      background: #000;
+      color: #fff;
+      border: 1px solid #444;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      box-shadow: none;
+      outline: none;
+    }
+    .minimal-control::placeholder {
+      color: rgba(255, 255, 255, 0.72);
+    }
     #ui {
-      position: absolute; left: 12px; top: 12px; z-index: 10;
+      position: absolute; right: 12px; bottom: 72px; z-index: 10;
       font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 18px;
-      background: rgba(0,0,0,0.45); padding: 10px 12px; border-radius: 10px;
+      background: transparent; padding: 10px 12px; border-radius: 10px;
       display: grid; gap: 8px; min-width: 360px;
+    }
+    #selected_curve_bar {
+      position: absolute;
+      left: 50%;
+      right: 12px;
+      bottom: 12px;
+      z-index: 12;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 24px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      box-sizing: border-box;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 14px;
+      text-align: right;
+      pointer-events: none;
+      background: rgba(0,0,0,0.45);
+      border: 1px solid #444;
+      backdrop-filter: blur(6px);
+    }
+    #selected_field_bar {
+      position: absolute;
+      left: calc(10vw + 40px);
+      right: calc(50% + 20px);
+      bottom: 12px;
+      z-index: 12;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 10px;
+      min-height: 24px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      box-sizing: border-box;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 14px;
+      text-align: left;
+      pointer-events: none;
+      background: rgba(0,0,0,0.45);
+      border: 1px solid #444;
+      backdrop-filter: blur(6px);
+    }
+    #selected_field_bar.is-empty { opacity: 0.8; }
+    #selected_curve_bar.is-empty { opacity: 0.8; }
+    .curve-bar-section {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .curve-bar-section.left {
+      justify-content: flex-start;
+      text-align: left;
+    }
+    .curve-bar-section.right {
+      justify-content: flex-end;
+      text-align: right;
+      margin-left: auto;
+    }
+    .curve-bar-label {
+      opacity: 0.8;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 12px;
+    }
+    .curve-bar-value {
+      font-size: 15px;
+      font-weight: 600;
+    }
+    #ui_fq {
+      position: absolute; left: 0; right: 0; top: 0; z-index: 40;
+      font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px;
+      background: #000;
+      padding: 10px 12px;
+      border-bottom: 1px solid #222;
+      display: flex;
+      justify-content: flex-start;
+      gap: 8px;
+      align-items: center;
+    }
+    .topbar-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #n_select {
+      display: block;
+      cursor: pointer;
+      min-width: 120px;
+    }
+    #ui_fq #ell_select {
+      cursor: pointer;
+      min-width: 100px;
+    }
+    #ui_top {
+      position: absolute; left: 50%; top: 56px; z-index: 11;
+      font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px;
+      background: transparent; padding: 10px 12px; border-radius: 10px;
+      display: grid; gap: 8px; min-width: 360px; max-width: calc(50vw - 24px);
+      max-height: calc(46vh - 44px); overflow: hidden;
+      white-space: nowrap;
+    }
+    #conductors_list {
+      position: absolute;
+      top: 56px;
+      left: calc(10vw + 40px);
+      right: calc(50% + 20px);
+      z-index: 11;
+      display: none;
+      padding: 10px 12px;
+      background: transparent;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 14px;
+      color: #fff;
+      line-height: 1.35;
+      white-space: nowrap;
+      text-align: left;
+      box-sizing: border-box;
+      overflow: hidden;
     }
     .row { display:grid; grid-template-columns: 120px 1fr; align-items:center; gap:8px; }
     input[type="range"]{ width:100%; }
@@ -34,81 +169,52 @@
     <div id="left" class="panel">
     </div>
     <div id="right" class="panel">
-      <div class="label">CURVES (X=j, Y=f, Z=t)</div>
+    </div>
+  </div>
+  <div id="ui_fq">
+    <div class="topbar-group">
+      <select id="n_select" class="minimal-control" aria-label="Field select"></select>
+    </div>
+    <div class="topbar-group">
+      <select id="ell_select" class="minimal-control" aria-label="Ell select">
+        <option value="ALL">ℓ</option>
+        <!-- Dynamic ell values will be inserted here -->
+      </select>
     </div>
   </div>
   <div id="ui">
     <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 8px;">
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <div>𝔽<span id="n" class="pill"><span id="divVal" class="pill"></span></div>
-        <div id="n_buttons" style="display: flex; gap: 4px;">
-          <label style="cursor: pointer; padding: 4px 10px; background: #2a2a30; border-radius: 6px; display: inline-block;">
-            <input type="radio" name="n_select" value="1" style="margin-right: 4px;"> 1
-          </label>
-          <label style="cursor: pointer; padding: 4px 10px; background: #2a2a30; border-radius: 6px; display: inline-block;">
-            <input type="radio" name="n_select" value="2" style="margin-right: 4px;"> 2
-          </label>
-          <label style="cursor: pointer; padding: 4px 10px; background: #2a2a30; border-radius: 6px; display: inline-block;">
-            <input type="radio" name="n_select" value="3" style="margin-right: 4px;"> 3
-          </label>
-          <label style="cursor: pointer; padding: 4px 10px; background: #2a2a30; border-radius: 6px; display: inline-block;">
-            <input type="radio" name="n_select" value="4" style="margin-right: 4px;"> 4
-          </label>
-          <label style="cursor: pointer; padding: 4px 10px; background: #2a2a30; border-radius: 6px; display: inline-block;">
-            <input type="radio" name="n_select" value="5" style="margin-right: 4px;"> 5
-          </label>
-          <label style="cursor: pointer; padding: 4px 10px; background: #2a2a30; border-radius: 6px; display: inline-block;">
-            <input type="radio" name="n_select" value="6" style="margin-right: 4px;"> 6
-          </label>
-          <label style="cursor: pointer; padding: 4px 10px; background: #2a2a30; border-radius: 6px; display: inline-block;">
-            <input type="radio" name="n_select" value="7" style="margin-right: 4px;"> 7
-          </label>
-          <label style="cursor: pointer; padding: 4px 10px; background: #2a2a30; border-radius: 6px; display: inline-block;">
-            <input type="radio" name="n_select" value="8" style="margin-right: 4px;"> 8
-          </label>
-        </div>
-      </div>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <div>ℓ:</div>
-        <select id="ell_select" style="background: #2a2a30; color: #ddd; border: 1px solid #444; padding: 6px 10px; border-radius: 6px; font-family: ui-monospace, Menlo, Consolas, monospace; cursor: pointer; min-width: 100px;">
-          <option value="ALL">ALL</option>
-          <!-- Dynamic ell values will be inserted here -->
-        </select>
-      </div>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <button id="layout_toggle" style="background: #2a2a30; color: #ddd; border: 1px solid #444; padding: 6px 12px; border-radius: 6px; font-family: ui-monospace, Menlo, Consolas, monospace; cursor: pointer; font-size: 14px;">
-          Layout: Circle
-        </button>
-      </div>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <button id="theme_toggle" style="background: #2a2a30; color: #ddd; border: 1px solid #444; padding: 6px 12px; border-radius: 6px; font-family: ui-monospace, Menlo, Consolas, monospace; cursor: pointer; font-size: 14px;">
-          ☀ Light
-        </button>
-      </div>
-      <div style="display: flex; align-items: center; gap: 8px;">
+      <div style="display: none; align-items: center; gap: 8px;">
         <button id="export_png" title="Export high-DPI PNG from active pane" style="background: #2a2a30; color: #ddd; border: 1px solid #444; padding: 6px 12px; border-radius: 6px; font-family: ui-monospace, Menlo, Consolas, monospace; cursor: pointer; font-size: 14px;">
           Export PNG 2x
         </button>
       </div>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <div>D:</div>
-        <input type="number" id="d_input" placeholder="discriminant" style="background: #2a2a30; color: #ddd; border: 1px solid #444; padding: 6px 10px; border-radius: 6px; font-family: ui-monospace, Menlo, Consolas, monospace; width: 120px;">
+      <div style="display: none; align-items: center; gap: 8px;">
+        <input type="number" id="d_input" class="minimal-control" placeholder="D_K" style="width: 120px;">
       </div>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <div>j:</div>
-        <input type="text" id="j_input" placeholder="j-invariant" style="background: #2a2a30; color: #ddd; border: 1px solid #444; padding: 6px 10px; border-radius: 6px; font-family: ui-monospace, Menlo, Consolas, monospace; width: 120px;">
-      </div>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <div>A:</div>
-        <input type="text" id="a_input" placeholder="A coeff" style="background: #2a2a30; color: #ddd; border: 1px solid #444; padding: 6px 10px; border-radius: 6px; font-family: ui-monospace, Menlo, Consolas, monospace; width: 100px;">
-      </div>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <div>B:</div>
-        <input type="text" id="b_input" placeholder="B coeff" style="background: #2a2a30; color: #ddd; border: 1px solid #444; padding: 6px 10px; border-radius: 6px; font-family: ui-monospace, Menlo, Consolas, monospace; width: 100px;">
+      <div style="display: none; align-items: center; gap: 8px;">
+        <input type="text" id="j_input" class="minimal-control" placeholder="j-invariant" style="width: 120px;">
       </div>
     </div>
+  </div>
+  <div id="ui_top">
     <div id="status"></div>
     <div id="nr_field_info"></div>
+  </div>
+  <div id="conductors_list"></div>
+  <div id="selected_field_bar" class="is-empty">
+    <span id="selected_field_label" class="curve-bar-label">Selected field</span>
+    <span id="selected_field_value" class="curve-bar-value">—</span>
+  </div>
+  <div id="selected_curve_bar" class="is-empty">
+    <div class="curve-bar-section left">
+      <span id="selected_ell_label" class="curve-bar-label">Volcano</span>
+      <span id="selected_ell_value" class="curve-bar-value">—</span>
+    </div>
+    <div class="curve-bar-section right">
+      <span id="selected_curve_label" class="curve-bar-label">Selected curve j</span>
+      <span id="selected_curve_value" class="curve-bar-value">—</span>
+    </div>
   </div>
   <script type="module" src="/static/js/app.js"></script>
 </body>

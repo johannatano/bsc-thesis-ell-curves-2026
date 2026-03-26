@@ -146,7 +146,7 @@ class CurvesClassifier_Fq:
                 for order in orders:
                     f = order.conductor
                     if not use_CN or (D_K in [-3, -4] and int(f) == 1):
-                        j_invs = get_j_invariants_from_order(D_K * f**2, f, self.field.q)
+                        j_invs = get_j_invariants_from_order(D_K * f**2, f, self.field)
                         for j_inv in j_invs:
                             order.add_j_invariant(j_inv)
                             # The same order may contribute curves to several

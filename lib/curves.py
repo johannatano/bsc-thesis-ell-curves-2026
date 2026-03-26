@@ -23,13 +23,13 @@ from lib.nr_fields import *
 
 highest_ell = 0
 
-def get_j_invariants_from_order(D: int, f: int, q: int) -> List:
+def get_j_invariants_from_order(D: int, f: int, fq:FqData) -> List:
     """Return the j-invariants attached to an order via its Hilbert class polynomial.
 
     Args:
         D: Discriminant of the order D_K f^2.
         f: Conductor of the order. Included for API clarity.
-        q: Size of the finite field.
+        fq: Finite field data.
 
     Returns:
         Roots of the Hilbert class polynomial in F_q.
@@ -37,9 +37,8 @@ def get_j_invariants_from_order(D: int, f: int, q: int) -> List:
     j_invs = []
     try:
         H = hilbert_class_polynomial(D)
-        F_q = GF(q)
         # Find roots of H(x) in F_q
-        for j in H.change_ring(F_q).roots(multiplicities=False):
+        for j in H.change_ring(fq.F).roots(multiplicities=False):
             j_invs.append(j)
     except Exception as e:
         print(f"Warning: Could not compute HCP for D={D}: {e}")
@@ -335,7 +334,7 @@ class NFCurve(Curve):
         return {
             "ID": self.ID,
             "j": element_to_tuple(self.j),
-            "j_minpoly": self.j_invariant[1],
+            "j_minpoly": self.j_invariant[1]
         }
 
 
@@ -372,7 +371,7 @@ class GeometricCurve(Curve):
 
     def _create(self):
         # Materialize the actual Sage curve once the coefficients are fixed.
-        self.E = EllipticCurve(GF(self.q), [self.A, self.B])
+        self.E = EllipticCurve(self.F, [self.A, self.B])
         if self.t is None:
             self.t = (
                 self.E.trace_of_frobenius()
