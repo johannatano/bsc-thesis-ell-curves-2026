@@ -22,11 +22,7 @@ div_poly  ell=71 q=5811067938190321: 49061.83 ms  (0 roots)
 mod_poly  ell=71 q=5811067938190321: 1073.51 ms  (0 roots)
 O(5041)+O(2613) mod_poly vs O(71)+O(182980) div_poly for ell=71, q=5811067938190321, number of roots
 
-
 this approach is feasable in sage for l < 100 as we can use precomputed mod polys in sage
-l volcanoes has also been used to compute modula rpolynomials,
-so what is chicken and egg here?
-
 
 as q grows, mod poly approach is significant faster, for small l and q, not so much difference
 as q grows, out enum is also slow, benefit from implementing hilbert class polynomials

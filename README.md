@@ -66,7 +66,7 @@ elliptic-point pairs `(E, P)` at level $\ell$.
 
 ## Hecke script
 
-The Hecke-oriented entry point is [hecke.py](hecke.py).
+Entry point is [hecke.py](hecke.py).
 
 ### Basic usage
 
@@ -95,5 +95,5 @@ Scan several levels automatically:
 
 - [classifier.py](classifier.py): command-line script for curve classification
 - [hecke.py](hecke.py): command-line script for Hecke-style experiments
-- [lib/](lib): main arithmetic and curve data structures
+- [lib/](lib): custom lib for number field and curve classifications
 - [utils/](utils): shared helpers and older utility code
