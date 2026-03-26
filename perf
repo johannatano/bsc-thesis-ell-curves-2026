@@ -25,4 +25,4 @@ O(5041)+O(2613) mod_poly vs O(71)+O(182980) div_poly for ell=71, q=5811067938190
 this approach is feasable in sage for l < 100 as we can use precomputed mod polys in sage
 
 as q grows, mod poly approach is significant faster, for small l and q, not so much difference
-as q grows, out enum is also slow, benefit from implementing hilbert class polynomials
+as q grows, out enum is also slow, benefit from implementing hilbert class polynomials/class nr
