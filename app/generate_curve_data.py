@@ -105,7 +105,7 @@ def generate(p: int, n: int, t_list: list[int], to_db: bool = False, db_path: st
         _init_cache_db(db)
         written = _save_catalogue_to_cache_db(p, n, out, db)
         print(f"Saved {written} number-field payload(s) to cache DB: {db}")
-    Data.saveJSON(f"./data/{p}", f"curves_{q}.json", out, readable=False)
+    #Data.saveJSON(f"./data/{p}", f"curves_{q}.json", out, readable=False)
 
 if __name__ == "__main__":
     args = parse_args()

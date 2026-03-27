@@ -1181,9 +1181,7 @@ function updateVolcanoEdgeHighlights() {
     const baseOpacity = obj.userData.baseEdgeOpacity ?? 0.95;
     const isPrimary = selectedIDs.size > 0 && (selectedIDs.has(obj.userData.edgeFrom) || selectedIDs.has(obj.userData.edgeTo));
     const isSecondary = secondaryIDs.size > 0 && (secondaryIDs.has(obj.userData.edgeFrom) || secondaryIDs.has(obj.userData.edgeTo));
-    const isHovered = selectedIDs.size === 0
-      && secondaryIDs.size === 0
-      && hoveredIDs.size > 0
+    const isHovered = hoveredIDs.size > 0
       && (hoveredIDs.has(obj.userData.edgeFrom) || hoveredIDs.has(obj.userData.edgeTo));
 
     if (isPrimary || isHovered) {
@@ -1247,36 +1245,39 @@ function onMouseMove(ev) {
       clearLeftCrosshair();
     }
     
-    // Only do mesh hover detection if nothing is selected
-    if (SELECTED.size === 0) {
-      const hits = raycaster.intersectObjects(curveMeshes, false);
-      const newHoveredDiscriminant = hits.length > 0 ? Number(hits[0].object.userData.discriminant) : null;
-      const newHoveredConductor = hits.length > 0
-        ? Number(hits[0].object.userData.piConductor ?? hits[0].object.userData.conductor)
-        : null;
-      
-      if (newHoveredDiscriminant !== hoveredDiscriminant || newHoveredConductor !== hoveredConductor) {
-        // Restore previous hover
-        if (hoveredDiscriminant !== null && newHoveredDiscriminant !== hoveredDiscriminant) {
-          restoreFieldColors(hoveredDiscriminant);
-        }
-        
-        // Apply new hover
-        if (newHoveredDiscriminant !== null) {
+    const hits = raycaster.intersectObjects(curveMeshes, false);
+    const newHoveredDiscriminant = hits.length > 0 ? Number(hits[0].object.userData.discriminant) : null;
+    const newHoveredConductor = hits.length > 0
+      ? Number(hits[0].object.userData.piConductor ?? hits[0].object.userData.conductor)
+      : null;
+
+    if (newHoveredDiscriminant !== hoveredDiscriminant || newHoveredConductor !== hoveredConductor) {
+      if (
+        hoveredDiscriminant !== null
+        && newHoveredDiscriminant !== hoveredDiscriminant
+        && Number(hoveredDiscriminant) !== Number(selectedDiscriminant)
+      ) {
+        restoreFieldColors(hoveredDiscriminant);
+      }
+
+      if (newHoveredDiscriminant !== null) {
+        if (Number(newHoveredDiscriminant) !== Number(selectedDiscriminant)) {
           if (newHoveredDiscriminant !== hoveredDiscriminant) {
             highlightField(newHoveredDiscriminant, newHoveredConductor, false);
           } else {
             updateLeftAxisForField(newHoveredDiscriminant, newHoveredConductor);
           }
-          showFieldInfo(newHoveredDiscriminant);
         } else {
-          hideFieldInfo();
+          restoreSelectedFieldPresentation();
         }
-        
-        hoveredDiscriminant = newHoveredDiscriminant;
-        hoveredConductor = newHoveredConductor;
-        updateFlatFieldListSelectionStyles();
+        showFieldInfo(newHoveredDiscriminant);
+      } else if (!restoreSelectedFieldPresentation()) {
+        hideFieldInfo();
       }
+
+      hoveredDiscriminant = newHoveredDiscriminant;
+      hoveredConductor = newHoveredConductor;
+      updateFlatFieldListSelectionStyles();
     }
   } else {
     // Mouse outside left canvas - clear crosshair
@@ -1421,7 +1422,6 @@ function onCurveRightClick(ev) {
 
 function onCurveMouseMove(ev) {
   lastActiveSceneKey = 'right';
-  if (selectedCurves.length > 0 || secondarySelectedCurves.length > 0) return; // Don't hover if something is selected
   
   const rect = sceneManager.right.renderer.domElement.getBoundingClientRect();
   mouse.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1461,6 +1461,26 @@ function onCurveMouseMove(ev) {
 
     updateVolcanoEdgeHighlights();
   }
+}
+
+function clearFieldHoverState() {
+  if (hoveredDiscriminant !== null && Number(hoveredDiscriminant) !== Number(selectedDiscriminant)) {
+    restoreFieldColors(hoveredDiscriminant);
+  }
+  hoveredDiscriminant = null;
+  hoveredConductor = null;
+
+  if (!restoreSelectedFieldPresentation()) {
+    hideFieldInfo();
+  }
+  updateFlatFieldListSelectionStyles();
+}
+
+function clearCurveHoverState() {
+  if (hoveredCurves.length === 0) return;
+  hoveredCurves = [];
+  syncCurveHighlights();
+  updateVolcanoEdgeHighlights();
 }
 
 function downloadBlob(blob, filename) {
@@ -1943,12 +1963,15 @@ function drawSelectedDKVerticalTubes(discriminant, highlightedConductor = null, 
 
 function highlightField(discriminant, highlightedConductor = null, selectedOnlyTube = false, highlightedDpi = null) {
   const magentaColor = new THREE.Color(1, 0, 1);
+  const preserveSelectedPresentation = !selectedOnlyTube
+    && selectedDiscriminant !== null
+    && Number(discriminant) !== Number(selectedDiscriminant);
   
   // Update left axis to show conductors for this field
   updateLeftAxisForField(discriminant, highlightedConductor);
 
   const oldTubes = sceneManager.left.scene.getObjectByName('selected-dk-vertical-tubes');
-  if (oldTubes) {
+  if (oldTubes && !preserveSelectedPresentation) {
     oldTubes.traverse((node) => {
       if (node instanceof CSS2DObject && node.element?.parentNode) {
         node.element.parentNode.removeChild(node.element);
@@ -1999,6 +2022,9 @@ function highlightField(discriminant, highlightedConductor = null, selectedOnlyT
 }
 
 function restoreFieldColors(discriminant) {
+  const preserveSelectedPresentation = selectedDiscriminant !== null
+    && Number(discriminant) !== Number(selectedDiscriminant);
+
   numberFieldGroups.forEach(({ group, discriminant: groupDisc }) => {
     if (groupDisc === discriminant && group) {
       group.traverse(obj => {
@@ -2021,10 +2047,12 @@ function restoreFieldColors(discriminant) {
   });
   
   // Clear conductor ticks when unhighlighting
-  clearLeftAxisTicks();
+  if (!preserveSelectedPresentation) {
+    clearLeftAxisTicks();
+  }
 
   const oldTubes = sceneManager.left.scene.getObjectByName('selected-dk-vertical-tubes');
-  if (oldTubes) {
+  if (oldTubes && !preserveSelectedPresentation) {
     oldTubes.traverse((node) => {
       if (node instanceof CSS2DObject && node.element?.parentNode) {
         node.element.parentNode.removeChild(node.element);
@@ -2115,6 +2143,24 @@ function hideFieldInfo() {
   }
   updateSelectedFieldInfoBar(null);
   ui.updateStatus(null);
+}
+
+function getSelectedFieldMesh() {
+  return SELECTED.values().next().value ?? null;
+}
+
+function restoreSelectedFieldPresentation() {
+  const mesh = getSelectedFieldMesh();
+  if (!mesh || selectedDiscriminant === null) return false;
+
+  highlightField(
+    selectedDiscriminant,
+    Number(mesh.userData.piConductor ?? mesh.userData.conductor),
+    true,
+    Number(mesh.userData.D_pi)
+  );
+  showFieldInfo(selectedDiscriminant);
+  return true;
 }
 
 function bindSceneActivityTracking(panelEl, sceneKey) {
@@ -2690,10 +2736,12 @@ addEventListener('resize', () => {
   sceneManager.left.renderer.domElement.addEventListener('click', onClick);
   sceneManager.left.renderer.domElement.addEventListener('mousemove', onMouseMove);
   sceneManager.left.renderer.domElement.addEventListener('mouseenter', () => { lastActiveSceneKey = 'left'; });
+  sceneManager.left.renderer.domElement.addEventListener('mouseleave', clearFieldHoverState);
   sceneManager.right.renderer.domElement.addEventListener('click', onCurveClick);
   sceneManager.right.renderer.domElement.addEventListener('contextmenu', onCurveRightClick);
   sceneManager.right.renderer.domElement.addEventListener('mousemove', onCurveMouseMove);
   sceneManager.right.renderer.domElement.addEventListener('mouseenter', () => { lastActiveSceneKey = 'right'; });
+  sceneManager.right.renderer.domElement.addEventListener('mouseleave', clearCurveHoverState);
 
   // Export high-DPI frame from active pane: Ctrl/Cmd+Shift+E or Shift+P.
   window.addEventListener('keydown', (ev) => {
