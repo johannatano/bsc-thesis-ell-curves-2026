@@ -175,7 +175,7 @@ class Curve:
                 r += 1
         return r
 
-    def _rank_by_div_poly(self, ell):
+    '''def _rank_by_div_poly(self, ell):
         if self.E is None:
             print(
                 f"{Colors.WARNING}Warning: Curve not initialized with Weierstrass form, cannot compute rank by division polynomial{Colors.ENDC}"
@@ -187,7 +187,7 @@ class Curve:
                 f"{Colors.WARNING}Warning: Division polynomial for ell={ell} may be expensive to compute, consider using modular polynomial method instead{Colors.ENDC}"
             )
         n_roots = sum(m for _, m in psi_n.roots(multiplicities=True))
-        return 2 if n_roots > 2 else (1 if n_roots > 0 else 0)
+        return 2 if n_roots > 2 else (1 if n_roots > 0 else 0)'''
 
     def _rank_by_modular_poly(self, ell):
         # Modular polynomials are slower per call, but avoid constructing full
@@ -211,17 +211,17 @@ class Curve:
             return True
         from utils.common import Config
 
-        if Config.rank_method == "auto":
+        '''if Config.rank_method == "auto":
             return (
                 self._rank_by_div_poly(ell) == 2
                 if ell < 13
                 else self._rank_by_modular_poly(ell) == 2
-            )
-        elif Config.rank_method == "mod_poly":
+            )'''
+        if Config.rank_method == "mod_poly":
             return self._rank_by_modular_poly(ell) == 2
         elif Config.rank_method == "invariants":
             return self._rank_by_group_structure(ell) == 2
-        return self._rank_by_div_poly(ell) == 2
+        return self._rank_by_modular_poly(ell) == 2
 
     def height_above_floor(self, ell, e, use_true_height=False):
         """Compute height above floor in ℓ-isogeny volcano.
@@ -284,6 +284,7 @@ class Curve:
         The computation factors the Frobenius conductor `f_pi` and removes the
         contribution coming from the curve's height in each ℓ-volcano.
         """
+
         if self.f_E is not None:
             return self.f_E
         self.f_E = 1
@@ -365,6 +366,8 @@ class GeometricCurve(Curve):
         self.A = self.F(A)
         self.B = self.F(B)
         self._create()
+        
+        
         self.ID = (
             self.toID()
         )  # short hash ID for quick reference, not guaranteed unique but should be good enough for our scale
@@ -372,12 +375,19 @@ class GeometricCurve(Curve):
     def _create(self):
         # Materialize the actual Sage curve once the coefficients are fixed.
         self.E = EllipticCurve(self.F, [self.A, self.B])
+        
+        npts = self.E.count_points()
+        t = self.q + 1 - npts
         if self.t is None:
             self.t = (
                 self.E.trace_of_frobenius()
             )  # TODO, reuse t = -t twist? for j = 0,1728 ??
         self.N_pts = self.q + 1 - self.t
         ss = self.E.is_supersingular()
+        if ss:
+            print(
+                f"{Colors.BLUE}Note: Curve with j={self.j} is supersingular according to Sage, t={t}, t={self.t}, q={self.q}{Colors.ENDC}"
+            )
         self.is_supersingular = (
             self.t % self.p == 0
         )  # self.E.is_supersingular() --> bit nmroe involved but bcs avoids calc cardinality, so just use t method here isntead

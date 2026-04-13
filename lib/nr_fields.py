@@ -28,15 +28,15 @@ class FqData:
     n: int
     q: int = field(init=False)
     F: GF = field(init=False)
-    
+
     def __post_init__(self) -> None:
         self.q = self.p ** self.n
-        self.F = GF(self.q, 'x', modulus='conway')
+        self.F = GF(self.q, "x")  # , modulus='conway'
         self.g = self.F.multiplicative_generator()
-        
+
     def multiplicative_generator(self):
         return self.F.multiplicative_generator()
-    
+
     def extend(self, n: int) -> 'FqData':
         return FqData(self.p, self.n * n)
 

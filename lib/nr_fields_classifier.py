@@ -106,7 +106,6 @@ class NumberFieldCatalogue:
         return catalogue
 
 
-
 class NumberFieldsClassifier_Fq:
     """Build the arithmetic catalogue of isogeny classes over fields of characteristic `p`.
     
@@ -132,7 +131,6 @@ class NumberFieldsClassifier_Fq:
             used_ts = set()
             q = self.char ** n
             print(f"{Colors.HEADER}Generating isogeny classes for F_{q}{Colors.ENDC}")
-
             if t_list is not None:
                 print(f"{Colors.HEADER}Using custom trace list with {len(t_list)} traces{Colors.ENDC}")
                 for t in t_list:
@@ -149,10 +147,16 @@ class NumberFieldsClassifier_Fq:
                 print(f"{Colors.WARNING}Warning: skipping initialization for F_{q} as it exceeds the current limit{Colors.ENDC}")
                 continue
 
-            HB = math.isqrt(4*q)
-            max_prime = q + 1 + HB
-            primes = list(primerange(2, min(max_prime + 1, q_max)))
+            HB = math.isqrt(4 * q)
+            for t in range(1, HB + 1):
+                if t % 100 == 0:
+                    print(t)
+                self.nr_fields.create_isogeny_class(t, n)
+                self.nr_fields.create_isogeny_class(-t, n)
 
+            '''max_prime = q + 1 + HB
+            primes = list(primerange(2, min(max_prime + 1, q_max)))
+            #primes = list(primerange(-HB, HB))
             from tqdm import tqdm
             for ell in tqdm(primes, desc=f"F_{q} primes", unit="ell", leave=False, ncols=80, ascii=True):
                 i_min = (q + 1 - HB + ell - 1) // ell
@@ -162,11 +166,12 @@ class NumberFieldsClassifier_Fq:
                     if abs(t) in used_ts:
                         continue
                     used_ts.add(abs(t))
+                    #print("adding t", t)
                     # Again, keep both signed trace classes available in memory.
                     self.nr_fields.create_isogeny_class(abs(t), n)
-                    self.nr_fields.create_isogeny_class(-abs(t), n)
+                    self.nr_fields.create_isogeny_class(-abs(t), n)'''
 
-        print(f"{Colors.GREEN}Finished generating isogeny classes for all specified p-powers{Colors.ENDC}")
+        # print(f"{Colors.GREEN}Finished generating isogeny classes for all specified p-powers{Colors.ENDC}")
         self.nr_fields.sort()
         return self.nr_fields
 

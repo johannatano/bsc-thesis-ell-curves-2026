@@ -77,7 +77,7 @@ const THEMES = {
     pillBg: '#e0e0e0',
   },
 };
-let currentTheme = 'dark';
+let currentTheme = 'light';
 
 // ==================== STATE ====================
 const SELECTED = new Set();

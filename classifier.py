@@ -46,7 +46,7 @@ def run(p: int, n: int, l: int, use_HCP: bool = False, use_CN: bool = False):
             for ell in levels:
                 #CC.compute_volcano(ell=ell, edges=False)
                 N_EP = CC.count_EP(ell=ell, use_CN=use_CN)
-                print(f"F_{q}: Total count of (E,P) for ell={ell}: {N_EP}")
+                print(f"{Colors.GREEN}F_{q}: Total count of (E,P) for ell={ell}: {N_EP}{Colors.ENDC}")
     
             
 if __name__ == "__main__":
