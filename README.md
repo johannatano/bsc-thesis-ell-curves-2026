@@ -1,19 +1,34 @@
 # bsc-thesis-ell-curves-2026
 
 Tools for enumerating elliptic curves over finite fields, organizing them into
-isogeny classes, and experimenting with elliptic-point counts and Hecke-style
-computations.
+isogeny classes, and number fields. Options to export to JSON.
 
-## Requirements
-
-- SageMath
-- Python packages used by the scripts, in particular `sympy`, `numpy`,
-	`requests`, and `tqdm` when progress bars are enabled
 
 Run the command-line tools with Sage's Python:
 
 - `sage -python classifier.py ...`
 - `sage -python hecke.py ...`
+
+
+## Standalone EP COUNT (demo)
+
+Entry point is [EP_standalone.py](EP_standalone.py). Standalone method to count EP using Class Number method. Only counts ordinary curves with D_K < -4 to test speed atm.
+
+### Basic usage
+
+Compute at one prime and one level:
+
+- `sage -python EP_standalone.py -p 100043 -l 7`
+
+#### Requirements
+
+- SageMath
+
+
+### Important options
+
+- `-p`, `--p`: field characteristic
+- `-l`, `--l`: level $\ell$
 
 ## Classifier
 
@@ -25,7 +40,15 @@ It supports three practical modes:
 - HCP/CM enumeration via Hilbert class polynomials,
 - class-number mode for more aggregated counting.
 
+Also supports Computing Isogeny Volcanos
+
 ### Basic usage
+
+#### Requirements
+
+- SageMath
+- Python packages used by the scripts, in particular `sympy`, `numpy`,
+	`requests`, and `tqdm` when progress bars are enabled
 
 Run over a specific field $F_{p^n}$ and a specific level $\ell$:
 
@@ -52,23 +75,24 @@ Scan default primes and default extension degrees:
 - `-p`, `--p`: field characteristic
 - `-n`, `--n`: extension degree
 - `-l`, `--l`: level $\ell$
-- `--use-hcp`: use Hilbert class polynomial enumeration
+- `--use-hcp`: use Hilbert class polynomial enumeration (instead of j in Fq)
 - `--use-cn`: use class-number counting instead of explicit curves where possible
 - `--rank-method {auto,div_poly,mod_poly,invariants}`: choose how above-floor
-	rank tests are performed
-- `--true-height`: use exact BFS height in the volcano instead of the default
+	rank tests are performed, only used if HCP and CN method is set to False
+- `--true-height`: use exact BFS height in the volcano instead of the default binary
 	floor test
-
-### What it prints
-
-For each selected field and level, the classifier prints the total count of
-elliptic-point pairs `(E, P)` at level $\ell$.
 
 ## Hecke script
 
 Entry point is [hecke.py](hecke.py).
 
 ### Basic usage
+
+#### Requirements
+
+- SageMath
+- Python packages used by the scripts, in particular `sympy`, `numpy`,
+	`requests`, and `tqdm` when progress bars are enabled
 
 Compute at one prime and one level:
 
@@ -87,26 +111,12 @@ Scan several levels automatically:
 - `-p`, `--p`: field characteristic
 - `-l`, `--l`: level $\ell$
 - `-k`, `--k`: weight
-- `--use-hcp`: use Hilbert class polynomial setup
+- `--use-hcp`: use Hilbert class polynomial enumeration (instead of j in Fq)
+- `--use-cn`: use class-number counting instead of explicit curves where possible
 - `--rank-method {auto,div_poly,mod_poly,invariants}`
 - `--true-height`
 
 
-
-## Standalone EP COUNT (demo)
-
-Entry point is [EP_standalone.py](EP_standalone.py). Standalone method to count EP using Class Number method. Only counts ordinary curves with D_K < -4 to test speed atm.
-
-### Basic usage
-
-Compute at one prime and one level:
-
-- `sage -python EP_standalone.py -p 100043 -l 7`
-
-### Important options
-
-- `-p`, `--p`: field characteristic
-- `-l`, `--l`: level $\ell$
 
 ## Repository layout
 
