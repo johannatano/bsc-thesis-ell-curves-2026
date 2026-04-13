@@ -91,6 +91,23 @@ Scan several levels automatically:
 - `--rank-method {auto,div_poly,mod_poly,invariants}`
 - `--true-height`
 
+
+
+## Standalone EP COUNT (demo)
+
+Entry point is [EP_standalone.py](EP_standalone.py). Standalone method to count EP using Class Number method. Only counts ordinary curves with D_K < -4 to test speed atm.
+
+### Basic usage
+
+Compute at one prime and one level:
+
+- `sage -python EP_standalone.py -p 100043 -l 7`
+
+### Important options
+
+- `-p`, `--p`: field characteristic
+- `-l`, `--l`: level $\ell$
+
 ## Repository layout
 
 - [classifier.py](classifier.py): command-line script for curve classification
