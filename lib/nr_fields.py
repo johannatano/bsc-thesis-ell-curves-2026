@@ -101,7 +101,6 @@ class MOD_POLY:
         """Return `Phi_ell(X,Y)` reduced to `GF(q)` and cached by `(ell,q)`."""
         key = (int(ell), int(p**n))
         if key not in cls._bivariate_cache:
-            print(f"{Colors.GREEN}Constructing bivariate modular polynomial for ell={ell}, q={p**n}...{Colors.ENDC}")
             F = get_fq(p, n).F
             R = PolynomialRing(F, ['X', 'Y'])
             phi_ZZ = classical_modular_polynomial(int(ell))
@@ -495,8 +494,6 @@ class IsogenyClass:
             for k in range(m):
                 target_curve = self.getCurveByJ(r)
                 if target_curve is not None:
-                    if ell == 23 and self.D_K == -136:
-                        print(f"{Colors.FAIL}Adding edge in volcano for ell={ell} between {curve.ID} and {target_curve.ID} with j={r}, t={self.t}{Colors.ENDC}")
                     self.volcanoes[ell].addIsogeny(curve.ID, target_curve.ID)
 
     def add_curve(self, curve) -> None:

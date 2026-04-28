@@ -18,13 +18,13 @@ from sympy import primerange
 
 from utils.common import Logger, Colors
 from lib.nr_fields import *
-#from utils.mod_poly import _classical_modular_polynomial
+# from utils.mod_poly import _classical_modular_polynomial
 
 class EPOrbit:
     """Minimal container for an elliptic-point orbit size."""
     def __init__(self, aut_size: int) -> None:
         self.aut_size: int = aut_size
-       
+
 class Point:
     """Wrapper around a Sage point with cached automorphism-orbit data."""
     def __init__(self, P) -> None:
@@ -59,7 +59,7 @@ class Point:
     
     def toTuple(self) -> Tuple[Tuple, Tuple]:
         return (element_to_tuple(self.P.x()),element_to_tuple(self.P.y()))
-    
+
 class TorsionSubgroup:
     """Compute basic ℓ-torsion data for a single elliptic curve.
 
@@ -67,7 +67,7 @@ class TorsionSubgroup:
     determining the rank of `E[ℓ](F_q)` and counting automorphism orbits of
     nonzero torsion points.
     """
-    
+
     def __init__(self, curve, l: int) -> None:
         self.curve = curve
         self.l: int = l
@@ -98,31 +98,37 @@ class TorsionSubgroup:
         else:
             for i in range(self.l):
                 self._add(i * self.gens[0])
-                
+
     def count_orbits(self) -> int:
         """Count automorphism orbits of nonzero ℓ-torsion points."""
+        if(self.rank == 0):
+            return 0
         return self._count_orbits_level_2() if self.l == 2 else (self._count_orbits_level_3() if self.l == 3 else self._count_orbits_general())
-    
+
     def _count_orbits_level_2(self) -> int:
         """Closed-form orbit count for ℓ = 2."""
+
         if(self.curve.aut_size == 2):
             return 2**self.rank - 1
         elif(self.curve.aut_size == 4):
             return 2**(self.rank -1)
         else:
             return 1
-        
+
     def _count_orbits_level_3(self) -> int:
         """Closed-form orbit count for ℓ = 3, including the extra `j=0` symmetry."""
         fixed = 3**self.rank - 1
         if(self.curve.aut_size == 6):
             B = self.curve.getCoefficients()[1]
+            print(
+                f"\n j=0 curve, rank={self.rank} with B={B}, t ={self.curve.t} is_square={B.is_square() if B is not None else 'N/A'}"
+            )
             fixed += 2*(1+B.is_square())
-        return (fixed // self.curve.aut_size)
-    
+        return (fixed / self.curve.aut_size)
+
     def _count_orbits_general(self) -> int:
         """Generic orbit count when no exceptional low-level case is needed."""
-        return (self.l**self.rank-1) // self.curve.aut_size
+        return (self.l**self.rank-1) / self.curve.aut_size
 
     def _add(self, ell_P) -> None:
         """Add a torsion point if it represents a new automorphism orbit."""
@@ -133,14 +139,14 @@ class TorsionSubgroup:
         if self._check_unique_orbit(P):
             self.orbits.append(P)
             self.n_orbits += 1
-    
+
     def _check_unique_orbit(self, torsion_point: Point) -> bool:
         for S in self.orbits:
             for P in S.orbit(self.curve.aut_grp):
                 if torsion_point.point().xy() == P:
                     return False
         return True
-    
+
     def _rank_by_group_structure(self) -> int:
         """Read the ℓ-rank from the abelian group invariants of `E(F_q)`."""
         invariants = self.curve.getSageCurve().abelian_group().invariants()
@@ -149,7 +155,7 @@ class TorsionSubgroup:
             if inv % self.l == 0:
                 r += 1
         return r
-    
+
     def _rank_by_modular_poly(self) -> int:
         """Estimate the rank from linear factors of the modular polynomial specialization."""
         mod_poly = classical_modular_polynomial(self.l, self.curve.j)
@@ -159,12 +165,12 @@ class TorsionSubgroup:
             if f.degree() == 1:
                 nr_linear_factors += m
         return 2 if nr_linear_factors > 1 else 1
-    
+
     def _rank_by_enum_points(self) -> int:
         """Fallback rank estimate by explicit enumeration of rational points."""
         torsion_pts = [P for P in self.curve.getSageCurve().points() if not P.is_zero() and (self.l * P).is_zero()]
         return 1 if len(torsion_pts) == (self.l-1) else 2  # rough estimate, may overcount if not full rank
-    
+
     def _two_torsion_rank(self) -> int:
         """Specialized 2-torsion rank test via splitting of the Weierstrass cubic."""
         if (self.curve.N_pts % 2 != 0):
@@ -172,7 +178,7 @@ class TorsionSubgroup:
         w_poly = self.curve.weierstrass_polynomial()
         splits = all(f.degree() == 1 for f, m in w_poly.factor())
         return 2 if splits else 1
-        
+
     def _compute_rank(self, f_pi) -> int:
         """Compute the expected torsion rank from the isogeny-class conductor data."""
         if self.curve.is_supersingular:
@@ -183,6 +189,6 @@ class TorsionSubgroup:
         """Return generators of the rational ℓ-torsion subgroup from Sage."""
         # Adapted from Sage's torsion basis logic, but allowing rank 1 output.
         return [P.element() for P in self.curve.getSageCurve().abelian_group().torsion_subgroup(self.l).gens()]
-        
+
     def toJSON(self) -> Dict[str, int]:
         return {"rank": self.rank}

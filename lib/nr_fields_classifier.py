@@ -130,12 +130,9 @@ class NumberFieldsClassifier_Fq:
             self.nr_fields.N = n
             used_ts = set()
             q = self.char ** n
-            print(f"{Colors.HEADER}Generating isogeny classes for F_{q}{Colors.ENDC}")
             if t_list is not None:
-                print(f"{Colors.HEADER}Using custom trace list with {len(t_list)} traces{Colors.ENDC}")
                 for t in t_list:
                     if abs(t) > 2*math.isqrt(q):
-                        print(f"{Colors.WARNING}Warning: skipping trace t={t} as it exceeds the Hasse bound for F_{q}{Colors.ENDC}")
                         continue
                     # Store both sign choices in memory; JSON serialization may
                     # later compress them back to a single |t| entry.
@@ -149,8 +146,6 @@ class NumberFieldsClassifier_Fq:
 
             HB = math.isqrt(4 * q)
             for t in range(1, HB + 1):
-                if t % 100 == 0:
-                    print(t)
                 self.nr_fields.create_isogeny_class(t, n)
                 self.nr_fields.create_isogeny_class(-t, n)
 

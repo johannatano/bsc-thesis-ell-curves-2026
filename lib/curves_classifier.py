@@ -118,6 +118,10 @@ class CurvesClassifier_Fq:
         """
         import time
         from tqdm import tqdm
+
+        # if using CN, we never get j invariants hence no coefficients, this means we have to compute based on t and for t = 0 the uniqueness for twists breaks down, so we need to track which (A,B) pairs have already been claimed by t=0 curves to avoid duplicates
+        reset_t0_cache()
+
         if use_HCP or use_CN:
             # Supersingular j-invariants are handled separately: the HCP pass is
             # aimed at ordinary CM data and does not cover these cases by itself.
@@ -167,8 +171,10 @@ class CurvesClassifier_Fq:
         global highest_ell
         # Standard count of isomorphism classes over F_q in characteristic > 3.
         NE = 2*(self.field.q -2) + gcd(4, self.field.q-1) + gcd(6, self.field.q-1)
-        if self.catalogue.size != NE:
-            print(f"{Colors.FAIL}Warning: total number of curves in catalogue ({self.catalogue.size}) does not match expected number from formula ({NE}), there may be duplicates or missing curves{Colors.ENDC}")
+
+        print(f"{Colors.HEADER}Finished enumerating curves over F_{self.field.q}, total size of catalogue: {self.catalogue.size}, expected size from formula: {NE}{Colors.ENDC}")
+        # if self.catalogue.size != NE:
+        #    print(f"{Colors.FAIL}Warning: total number of curves in catalogue ({self.catalogue.size}) does not match expected number from formula ({NE}), there may be duplicates or missing curves{Colors.ENDC}")
         # else:
         #    print(f"{Colors.GREEN}Successfully enumerated curves, total size of catalogue: {self.catalogue.size}{Colors.ENDC}")
 
@@ -206,7 +212,6 @@ class CurvesClassifier_Fq:
         """Insert the supersingular twist family attached to `j`."""
         aut_grp = self._get_aut_group_for_j(j)
         ell_t = self.catalogue.get_isogeny_class(0)
-        print(aut_grp)
         for t in range(0, aut_grp['size']):
             self.catalogue.add(NFCurve(self.field, j, aut_grp=aut_grp, t=0, f_E=1))
 
@@ -243,30 +248,54 @@ class CurvesClassifier_Fq:
             # Early exit: no rational ℓ-torsion can occur in this class.
             if ell_t.N_pts % ell != 0:
                 continue
+
             if use_CN and ell_t.ordinary:
                 # In class-number mode, use order counts instead of explicit curves.
                 for f, o in ell_t.orders.items():
 
+                    # TODO: ADDED FALSE HERE TO ALWAYS USE
                     if ell_t.D_K in [-3, -4] and int(f) == 1:
                         # The exceptional CM cases still need explicit curves.
                         curves = ell_t.curves_by_order.get(int(f))
+
                         for c in curves:
                             torsion_subgroup = TorsionSubgroup(c, ell)
                             torsion_subgroup.compute_rank(f_pi=ell_t.f_pi, use_generators=False)
-                            N_EP += torsion_subgroup.count_orbits()
-                    else:    
-                        r = 2 if ZZ(o.conductor).valuation(ell) < ZZ(ell_t.f_pi).valuation(ell) else 1   
-                        N_EP += o.class_number*(ell**r - 1) // 2
+                            n_orb = torsion_subgroup.count_orbits()
+                            N_EP += n_orb
+                            if(c.is_j1728):
+                                print(
+                                    f"\n SS?={c.is_supersingular} A={c.A} adding j1728 t={ell_t.t} N orbits={n_orb}, check={(4+2*(2**torsion_subgroup.rank-2))/4}, eq={2**(torsion_subgroup.rank-1)}"
+                                )
+                            elif c.is_j0:
+                                print(
+                                    f"\n SS?={c.is_supersingular} B={c.B} adding j0 t={ell_t.t} N orbits={n_orb}"
+                                )
+                    else:
+                        # from apper, recall pl = 2^r-1 for ell = 2
+                        m = 2 if ell > 2 else 1
+                        r = 2 if ZZ(o.conductor).valuation(ell) < ZZ(ell_t.f_pi).valuation(ell) else 1
+                        N_EP += o.class_number * (ell**r - 1) / m
             else:
-
+                ## SS CURVES
                 for f, curves_list in ell_t.curves_by_order.items():
 
                     for c in curves_list:
                         torsion_subgroup = TorsionSubgroup(c, ell)
                         torsion_subgroup.compute_rank(f_pi=ell_t.f_pi, use_generators=False)
-                        N_EP += torsion_subgroup.count_orbits()
 
-        print(f"Computed torsion in {time.perf_counter() - _t0:.2f}s")
+                        n_orb = torsion_subgroup.count_orbits()
+                        N_EP += n_orb
+
+                        if(c.is_j1728):
+                            print(
+                                    f"\n SS?={c.is_supersingular} A={c.A} adding j1728 t={ell_t.t} N orbits={n_orb}"
+                                )
+                        elif c.is_j0:
+                            print(
+                                    f"\n SS?={c.is_supersingular} B={c.B} adding j0 t={ell_t.t} N orbits={n_orb}"
+                                )
+
         return N_EP
 
     def compute_hecke(self, k, level, use_CN=False) -> Tuple[int, int, int, List[int], List[int]]:
@@ -281,19 +310,18 @@ class CurvesClassifier_Fq:
         traces = []
         hk_evals = []
         vals = []
+        full_r = False
         _t0 = time.perf_counter()
 
         for ell_t in tqdm(isogeny_classes, desc="computing torsion", unit="ic", ncols=80, ascii=True, leave=False):
 
             if ell_t.N_pts % level != 0:
                 continue
-            print("found", ell_t.t)
             traces.append(ell_t.t)
+
             hk = ell_t.eval_hk_mod_fx(level, hk_symbolic)
             hk_evals.append(hk)
-            # print(
-            #    f"{Colors.GREEN}\nComputing Hecke t={ell_t.t} with hk={hk}{Colors.ENDC}"
-            # )
+
             # note, the contribution for each curve / order does not have to be integer value, for |aut| > 2 we can get n/3 or n/2 sums but these sum to integers over twists, uncomment below to see this in action
             if use_CN and ell_t.ordinary:
                 for f, o in ell_t.orders.items():
@@ -301,16 +329,17 @@ class CurvesClassifier_Fq:
                     if ell_t.D_K in [-3, -4] and int(f) == 1:
                         aut_size = 6 if ell_t.D_K == -3 else 4
                     r = 2 if ZZ(f).valuation(level) < ZZ(ell_t.f_pi).valuation(level) else 1
+
+                    if r == 2:
+                        full_r = True
+
                     T -= hk * o.class_number * (level**r-1) / aut_size
                     vals.append(-hk * o.class_number * (level**r - 1) / aut_size)
                     NC += o.class_number
-                    print(f"ordinary cn, accum, nr={o.class_number}, r = {r}")
             elif ell_t.ordinary:     
                 for f, curves_list in ell_t.curves_by_order.items():
                     r = 2 if ZZ(f).valuation(level) < ZZ(ell_t.f_pi).valuation(level) else 1
-                    # print(f"ordinary non cn, accum, nr={len(curves_list)}, r = {r}")
                     for c in curves_list:
-                        # print(f"f_E={c.f_E}, f_pi={ell_t.f_pi}, f={f}, j ={c.j}, t={c.t}, aut_size={c.aut_size}")
                         T -= hk * (level**r-1) / c.aut_size
                         vals.append(-hk * (level**r - 1) / c.aut_size)
                         NC += 1
@@ -323,19 +352,20 @@ class CurvesClassifier_Fq:
                         if ZZ(f).valuation(level) < ZZ(ell_t.f_pi).valuation(level)
                         else 1
                     )
-                    print(f"SS accum, nr={len(curves_list)}, f={f}")
                     for c in curves_list:
                         torsion_subgroup = TorsionSubgroup(c, level)
                         torsion_subgroup.compute_rank(f_pi=-1, use_generators=False)
                         r = torsion_subgroup.rank
-                        print(f"SS r={r}, r2={r2}")
+                        if r == 2:
+                            full_r = True
+
                         T -= hk * (level**r - 1) / c.aut_size
                         NC += 1
                         NSS += 1
                         vals.append(-hk * (level**r - 1) / c.aut_size)
 
         # print(f"Computed hecke trace in {time.perf_counter() - _t0:.5f}s")
-        return T, NC, NSS, traces, hk_evals, vals
+        return T, NC, NSS, traces, hk_evals, vals, full_r
 
     def toJSON(self) -> Dict[str, Any]:
         """Serialize the finite-field catalogue in the frontend/backend JSON format."""

@@ -52,6 +52,14 @@ class Curve:
     CM/Hilbert-class-polynomial records and fully instantiated Sage curves.
     """
 
+    # Tracks (A, B) pairs already assigned to t=0 curve objects, keyed by (p, j_flat).
+    # Prevents multiple t=0 curves at the same j from receiving the same twist model.
+    _t0_claimed: Dict = {}
+
+    @classmethod
+    def _reset_t0_cache(cls):
+        cls._t0_claimed.clear()
+
     @staticmethod
     def ABFromJ(j) -> Tuple:
         """Construct a short Weierstrass model with the given j-invariant.
@@ -132,13 +140,19 @@ class Curve:
             e = (2, 3)
 
         coset_reps = [self.field.g**k for k in range(0, self.aut_size)]
+        cache_key = (self.p, self.j_invariant_flat)
+        claimed = Curve._t0_claimed.setdefault(cache_key, set()) if self.t == 0 else None
         for u in coset_reps:
             A, B = self.ABFromJ(self.j)
-            E = EllipticCurve(self.F, [u ** e[0] * A, u ** e[1] * B])
+            cA, cB = u ** e[0] * A, u ** e[1] * B
+            E = EllipticCurve(self.F, [cA, cB])
             t = E.trace_of_frobenius()
             if t == self.t:
-                self.A, self.B = u ** e[0] * A, u ** e[1] * B
-                # print(f"{Colors.GREEN}Successfully computed coefficients A,B from j-invariant for curve with j={self.j}, coeff t={t}, my t={self.t}{Colors.ENDC}")
+                if claimed is not None and (cA, cB) in claimed:
+                    continue
+                self.A, self.B = cA, cB
+                if claimed is not None:
+                    claimed.add((cA, cB))
                 break
 
         return (self.A, self.B)
@@ -309,6 +323,11 @@ class Curve:
         raise NotImplementedError("Subclasses must implement toJSON()")
 
 
+def reset_t0_cache():
+    """Clear the t=0 twist-assignment cache. Call once per prime."""
+    Curve._reset_t0_cache()
+
+
 class NFCurve(Curve):
     """Lightweight curve representation for number field enumeration.
 
@@ -384,10 +403,6 @@ class GeometricCurve(Curve):
             )  # TODO, reuse t = -t twist? for j = 0,1728 ??
         self.N_pts = self.q + 1 - self.t
         ss = self.E.is_supersingular()
-        if ss:
-            print(
-                f"{Colors.BLUE}Note: Curve with j={self.j} is supersingular according to Sage, t={t}, t={self.t}, q={self.q}{Colors.ENDC}"
-            )
         self.is_supersingular = (
             self.t % self.p == 0
         )  # self.E.is_supersingular() --> bit nmroe involved but bcs avoids calc cardinality, so just use t method here isntead
