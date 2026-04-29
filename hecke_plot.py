@@ -61,18 +61,31 @@ def parse_args():
         help="Show interactive slider UI (caches enumeration, recomputes Hecke on k/ell change)",
     )
     p.add_argument("--pmax", type=int, default=100, help="Upper prime bound for interactive mode")
+    p.add_argument("--db-path", type=str, default="", help="SQLite cache path for pre-generated nr_fields (app/data/cache.sqlite3)")
     return p.parse_args()
 
 
-def enumerate_only(primes, n, use_HCP=False, use_CN=False, q_max=10**20):
+def enumerate_only(primes, n, use_HCP=False, use_CN=False, q_max=10**20, db_path=""):
     from lib.curves import reset_t0_cache
+    from pathlib import Path
+    nf_db = None
+    if db_path:
+        from app.generate_number_fields import load_nr_fields_from_db
+        nf_db = Path(db_path)
+
     cached = []
     for p in primes:
         reset_t0_cache()
         nf = None
         if use_HCP or use_CN:
-            NFC = NumberFieldsClassifier_Fq(p)
-            nf = NFC.generate([n], q_max=q_max)
+            if nf_db is not None:
+                from app.generate_number_fields import load_nr_fields_from_db
+                nf = load_nr_fields_from_db(p, n, nf_db)
+                if nf is not None:
+                    print(f"  Loaded nr_fields for p={p}, n={n} from DB cache")
+            if nf is None:
+                NFC = NumberFieldsClassifier_Fq(p)
+                nf = NFC.generate([n], q_max=q_max)
         q = p**n
         if q > q_max:
             continue
@@ -241,7 +254,7 @@ if __name__ == "__main__":
     if args.interactive:
         primes = [p for p in primerange(5, args.pmax)]
         print(f"Enumerating curves for {len(primes)} primes up to {args.pmax}...")
-        cached = enumerate_only(primes, args.n, use_HCP=args.use_hcp, use_CN=args.use_cn)
+        cached = enumerate_only(primes, args.n, use_HCP=args.use_hcp, use_CN=args.use_cn, db_path=args.db_path)
 
         ell_list = list(primerange(2, 100))
         init_ell_idx = ell_list.index(args.l) if args.l in ell_list else 0
