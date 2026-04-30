@@ -30,8 +30,8 @@ def parse_args():
     return p.parse_args()
 
 def run(p: int, l:int, k:int, n:int, use_HCP=False, use_CN=False):
-    primes = list(primerange(5, 20)) if p == -1 else [p]
-    primes = list(primerange(10**6, 10**6+100)) if p == -1 else [p]
+    primes = list(primerange(5, 100)) if p == -1 else [p]
+    #primes = list(primerange(10**6, 10**6+100)) if p == -1 else [p]
     # 1000033
     # 10093
     # p=1091
@@ -54,28 +54,21 @@ def run(p: int, l:int, k:int, n:int, use_HCP=False, use_CN=False):
             print(f"Skipping F_{q} due to size > {q_max}")
             continue
         CC = CurvesClassifier_Fq(p, n, NF=nf)
-        CC.enumerate_curves(use_HCP=use_HCP, use_CN=use_CN, add_curves=False, add_SS=False)
+        CC.enumerate_curves(use_HCP=use_HCP, use_CN=use_CN, add_curves=True, add_SS=True)
 
         for ell in levels:
-            # if p % ell == 1:
-            #    print(f"{Colors.GREEN}CAUTION, we have p ≡ 1 (mod {ell}), p={p}{Colors.ENDC}")
-            '''print(
-                f"\n{Colors.BLUE}=== Computing Hecke operator T_{ell} for weight {k} ==={Colors.ENDC}\n"
-            )'''
-            T, NC, NSS, traces, hk_evals, vals = CC.compute_hecke(k=args.k, level=ell, use_CN=use_CN)
-            trace_val = 0#CuspForms(Gamma1(ell), k + 2).hecke_operator(q).trace()
+            T, NC, NSS, traces, hk_evals, vals, full_r = CC.compute_hecke(k=args.k, level=ell, use_CN=use_CN)
+            trace_val = CuspForms(Gamma1(ell), k + 2).hecke_operator(q).trace()
             diff = T - trace_val
             diffs.setdefault((ell, k, (ell - 1) // 2), []).append(
                 (q, diff, T, trace_val, NC, NSS, vals, traces, hk_evals)
             )
-            print("NUM CURVES", NC)
-            print(f"p={p}, Total Hecke trace for level {ell} and weight {args.k}: {T}, sage trace: {trace_val}, difference: {T - trace_val}")
     print("\n" + "="*80)
     print("Diff summary (ell, k, dim) -> [(p, diff)]")
     print("="*80)
     for key, entries in sorted(diffs.items()):
         ell, k_, dim = key
-        print(f"  (ell={ell}, k={k_}, dim={dim}):")
+        print(f"  (ell={ell}, k={k_}):")
         for (
             p_val,
             d,
@@ -96,9 +89,9 @@ def run(p: int, l:int, k:int, n:int, use_HCP=False, use_CN=False):
             else:
                 color = Colors.ENDC
                 label = ""
-            # print(
-            #    f"    {color}q={p_val}: diff={d}, T={T_val}, sage_trace={trace_val}, vals={vals}, NC={NC_val}, NSS={NSS_val}, traces={traces_val}, hk_evals={hk_evals_val}, {label} [q≡{p_val % ell} mod {ell}]{Colors.ENDC}"
-            # )
+            print(
+                f"{color}q={p_val}: diff={d}, T={T_val}, sage_trace={trace_val}, NC={NC_val}, NSS={NSS_val}, {label} [q≡{p_val % ell} mod {ell}]{Colors.ENDC}"
+             )
 if __name__ == "__main__":
     args = parse_args()
     Config.rank_method = args.rank_method

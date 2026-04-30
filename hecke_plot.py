@@ -101,9 +101,9 @@ def compute_traces(cached, ell, k, use_CN=False, plist=None):
         T, NC, NSS, traces, hk_evals, vals, full_r = CC.compute_hecke(k=k, level=ell, use_CN=use_CN)
 
         clr = Colors.GREEN if q % ell == 1 else (Colors.WARNING if q % ell == ell - 1 else Colors.BOLD)
-        print(
-            f"{clr}-----------ell={ell}------------------p={p}, q={q}, q mod ell = {q % ell}{Colors.ENDC}"
-        )
+        #print(
+        #    f"{clr}-----------ell={ell}------------------p={p}, q={q}, q mod ell = {q % ell}{Colors.ENDC}"
+        #)
 
         # EP = CC.count_EP(ell, use_CN=use_CN)
 

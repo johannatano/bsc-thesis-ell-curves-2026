@@ -355,7 +355,8 @@ class CurvesClassifier_Fq:
                     T -= hk * o.class_number * (level**r-1) / aut_size
                     vals.append(-hk * o.class_number * (level**r - 1) / aut_size)
                     NC += o.class_number
-            elif ell_t.ordinary:     
+            elif ell_t.ordinary:
+
                 for f, curves_list in ell_t.curves_by_order.items():
                     r = 2 if ZZ(f).valuation(level) < ZZ(ell_t.f_pi).valuation(level) else 1
                     for c in curves_list:
