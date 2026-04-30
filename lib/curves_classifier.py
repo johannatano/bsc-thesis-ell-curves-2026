@@ -34,6 +34,7 @@ highest_ell = 0
 # Curve enumeration and classification
 # =============================================================================
 
+
 class EllFiniteFieldCatalogue:
     """In-memory catalogue of curves over a fixed finite field F_{p^n}.
 
@@ -122,24 +123,9 @@ class CurvesClassifier_Fq:
         # if using CN, we never get j invariants hence no coefficients, this means we have to compute based on t and for t = 0 the uniqueness for twists breaks down, so we need to track which (A,B) pairs have already been claimed by t=0 curves to avoid duplicates
         reset_t0_cache()
 
+        print(f"{Colors.HEADER}------------------------------Starting curve enumeration for p={self.field.p}, n={self.field.n} F_{self.field.q} with use_HCP={use_HCP}, use_CN={use_CN}, add_SS={add_SS}, add_curves={add_curves}{Colors.ENDC}")
+
         if use_HCP or use_CN:
-            # Supersingular j-invariants are handled separately: the HCP pass is
-            # aimed at ordinary CM data and does not cover these cases by itself.
-            if add_SS:
-                if self.field.p % 3 == 2:
-                    # print(f"{Colors.FAIL}j-invariant 0 is SS{Colors.ENDC}")
-                    self.add_ss_curve_by_j(self.field.F(0))
-
-                if self.field.p % 4 == 3:
-                    # print(f"{Colors.FAIL}j-invariant 1728 is SS{Colors.ENDC}")
-                    self.add_ss_curve_by_j(self.field.F(1728))
-
-                SS_poly = supersingular_j_polynomial(self.field.p)
-                for r in SS_poly.roots(multiplicities=False):
-                    # print(f"{Colors.HEADER}Found supersingular j-invariant root in F_{self.field.q}: j={r}, is_1728={(r-1728).is_zero()}{Colors.ENDC}")
-                    self.add_ss_curve_by_j(self.field.F(r))  # we know these are SS, so t=0, and f_E=1 since they have maximal endomorphism ring
-            # For each order, recover its j-invariants and attach them to all
-            # trace classes compatible with that order.
 
             if add_curves:
                 nf_list = list(self.catalogue.NFC.data.values())
@@ -162,6 +148,27 @@ class CurvesClassifier_Fq:
                             # In class-number mode we only track multiplicities.
                             self.catalogue.size += order.class_number*len(order.traces)
 
+            # Supersingular j-invariants are handled separately: the HCP pass is
+            # aimed at ordinary CM data and does not cover these cases by itself.
+            if add_SS:
+                if self.field.p % 3 == 2:
+                    print(f"{Colors.FAIL}j-invariant 0 is SS{Colors.ENDC}")
+                    self.add_ss_curve_by_j(self.field.F(0))
+
+                if self.field.p % 4 == 3:
+                    print(f"{Colors.FAIL}j-invariant 1728 is SS{Colors.ENDC}")
+                    self.add_ss_curve_by_j(self.field.F(1728))
+
+                SS_poly = supersingular_j_polynomial(self.field.p)
+                SS_poly_Fq = SS_poly.change_ring(self.field.F)
+
+                for r in SS_poly_Fq.roots(multiplicities=False):
+                    self.add_ss_curve_by_j(
+                        self.field.F(r)
+                    )  # we know these are SS, so t=0, and f_E=1 since they have maximal endomorphism ring
+            # For each order, recover its j-invariants and attach them to all
+            # trace classes compatible with that order.
+
         elif add_curves:
             _t0 = time.perf_counter()
             precompute_conductor = True
@@ -179,6 +186,34 @@ class CurvesClassifier_Fq:
         #    print(f"{Colors.GREEN}Successfully enumerated curves, total size of catalogue: {self.catalogue.size}{Colors.ENDC}")
 
         # print(f"Enumeration done in {time.perf_counter() - _t0:.2f}s")
+
+    def check_SS(self)->None:
+        N = 0
+        for ell_t in self.catalogue.isogeny_classes():
+
+            nt = 0
+            js = []
+            if not ell_t.ordinary:
+                for f, curves_list in ell_t.curves_by_order.items():
+                    for c in curves_list:
+                        N += 1
+                        nt += 1
+                        js.append(c.j)
+
+        if self.field.n % 2 == 0:
+            NSS = num_supersingular_curves_q_square(self.field.p)
+            NQ = quaternion_class_number(self.field.p)
+
+            if N != NSS:
+                print(f"{Colors.FAIL}Warning: number of supersingular curves found ({N}) does not match expected count from formula ({NSS}) for q={self.field.q}{Colors.ENDC}")
+            else:
+                print(f"{Colors.GREEN}Verified count of supersingular curves: {N} matches expected count from formula for q={self.field.q}{Colors.ENDC}")
+
+            print(
+                f"EXPECTING 2x{NQ}={2*NQ} supersingular curves at t=±2√q"
+            )
+        else:
+            print(f"Found {N} total supersingular curves across all traces for q={self.field.q}")
 
     def add_curves_by_j(self, j, t: Optional[int] = None, f_E: Optional[int] = None, compute_twists: bool = True, pre_compute_conductor=False) -> None:
         """Create the geometric twist family attached to a given j-invariant."""
@@ -211,9 +246,12 @@ class CurvesClassifier_Fq:
     def add_ss_curve_by_j(self, j) -> None:
         """Insert the supersingular twist family attached to `j`."""
         aut_grp = self._get_aut_group_for_j(j)
-        ell_t = self.catalogue.get_isogeny_class(0)
-        for t in range(0, aut_grp['size']):
-            self.catalogue.add(NFCurve(self.field, j, aut_grp=aut_grp, t=0, f_E=1))
+        # ell_t = self.catalogue.get_isogeny_class(0)
+        E = GeometricCurve(self.field, j, aut_grp=aut_grp, t=None, f_E=None)
+        ell_t = self.catalogue.get_isogeny_class(E.t)
+        twists = E.compute_twists()
+        for E_t in twists:
+            self.catalogue.add(E_t)
 
     def add_nf_curve(self, j, t: int, f_E: int) -> None:
         """Insert a lightweight CM-derived curve record into the catalogue."""
@@ -263,14 +301,6 @@ class CurvesClassifier_Fq:
                             torsion_subgroup.compute_rank(f_pi=ell_t.f_pi, use_generators=False)
                             n_orb = torsion_subgroup.count_orbits()
                             N_EP += n_orb
-                            if(c.is_j1728):
-                                print(
-                                    f"\n SS?={c.is_supersingular} A={c.A} adding j1728 t={ell_t.t} N orbits={n_orb}, check={(4+2*(2**torsion_subgroup.rank-2))/4}, eq={2**(torsion_subgroup.rank-1)}"
-                                )
-                            elif c.is_j0:
-                                print(
-                                    f"\n SS?={c.is_supersingular} B={c.B} adding j0 t={ell_t.t} N orbits={n_orb}"
-                                )
                     else:
                         # from apper, recall pl = 2^r-1 for ell = 2
                         m = 2 if ell > 2 else 1
@@ -279,22 +309,11 @@ class CurvesClassifier_Fq:
             else:
                 ## SS CURVES
                 for f, curves_list in ell_t.curves_by_order.items():
-
                     for c in curves_list:
                         torsion_subgroup = TorsionSubgroup(c, ell)
                         torsion_subgroup.compute_rank(f_pi=ell_t.f_pi, use_generators=False)
-
                         n_orb = torsion_subgroup.count_orbits()
                         N_EP += n_orb
-
-                        if(c.is_j1728):
-                            print(
-                                    f"\n SS?={c.is_supersingular} A={c.A} adding j1728 t={ell_t.t} N orbits={n_orb}"
-                                )
-                        elif c.is_j0:
-                            print(
-                                    f"\n SS?={c.is_supersingular} B={c.B} adding j0 t={ell_t.t} N orbits={n_orb}"
-                                )
 
         return N_EP
 
@@ -356,9 +375,19 @@ class CurvesClassifier_Fq:
                         torsion_subgroup = TorsionSubgroup(c, level)
                         torsion_subgroup.compute_rank(f_pi=-1, use_generators=False)
                         r = torsion_subgroup.rank
+                        if not ell_t.ordinary:
+
+                            fx_roots = ell_t.fx_pi.roots()
+                            r_mod_ell_list = []
+                            for root, multiplicity in fx_roots:
+                                r_mod_ell = Zmod(level)(root)
+                                print(root)
+                                r_mod_ell_list.append(r_mod_ell)
+                            print(
+                                f"\n SS CURVE rank = {r} for curve with j={c.j}, t={ell_t.t}, D_K={ell_t.D_K}, f_pi={ell_t.f_pi} is_j0={(c.j).is_zero()}, is_j1728={(c.j-1728).is_zero()}, fx_roots={ell_t.fx_pi.roots()}, r_mod_ell_list={r_mod_ell_list}, q mod level = {self.field.q % level}, Npts={ell_t.N_pts}, Npts mod level = {ell_t.N_pts % level}"
+                            )
                         if r == 2:
                             full_r = True
-
                         T -= hk * (level**r - 1) / c.aut_size
                         NC += 1
                         NSS += 1

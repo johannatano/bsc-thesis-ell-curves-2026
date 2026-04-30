@@ -20,6 +20,15 @@ def max_ell_from_HB(q: int) -> int:
 def toID(id) -> str:
     return ''.join(str(id).split())
 
+def num_supersingular_curves_q_square(p: int) -> int:
+    return (p + 6 - 4 * kronecker(-3, p) - 3 * kronecker(-4, p)) // 6 + 2 - 2*kronecker(-3, p) + 1 - kronecker(-4, p)
+
+def quaternion_class_number(p):
+    """Class number h(Q_{infty,p}) — number of ss curves at t = ±2√q."""
+    chi3 = kronecker(-3, p)
+    chi4 = kronecker(-4, p)
+    return (p + 6 - 4*chi3 - 3*chi4) // 12
+
 checked_js = set()  # global set to track which j-invariants have been processed
 @dataclass
 class FqData:
@@ -409,6 +418,20 @@ class IsogenyClass:
             for d in sorted(self.f_pi.divisors(), reverse=False):
                 order = self.ensure_order_exists(self.D_K, self.K, d)
             self.O_K = self.K.maximal_order()
+        else:
+            # we are ins ss case, but induced number field is same
+            if self.fx_pi.is_irreducible():
+                self.K = NumberField(self.fx_pi, "x")
+                self.D_K = ZZ(self.K.discriminant())
+                f_pi2 = ZZ(self.D_pi // self.D_K)
+                self.f_pi = f_pi2.isqrt()
+                for d in sorted(self.f_pi.divisors(), reverse=False):
+                    order = self.ensure_order_exists(self.D_K, self.K, d)
+                self.O_K = self.K.maximal_order()
+            #else:
+            #    print(f"SS CASE, QUATERNION ALGEBRA BUT FROB IS IN Z")
+            #print(f"t={t} SS orders: D_K={self.D_K}, f_pi={self.f_pi}, D_pi={self.D_pi}, orders: {[order.toJSON() for order in self.orders.values()]}")
+
         self.generic = True
         self.empty = True
         self.curves_by_order = {}  # dict: conductor (f_E) -> list of Curve objects

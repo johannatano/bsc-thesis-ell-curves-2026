@@ -146,6 +146,9 @@ class NumberFieldsClassifier_Fq:
 
             HB = math.isqrt(4 * q)
             for t in range(1, HB + 1):
+                if t % self.char == 0:
+                    print(f"{Colors.WARNING}Skipping trace t={t} for F_{q} since it is 0 or divisible by char {self.char}{Colors.ENDC}")
+                    continue
                 self.nr_fields.create_isogeny_class(t, n)
                 self.nr_fields.create_isogeny_class(-t, n)
 

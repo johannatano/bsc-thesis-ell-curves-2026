@@ -139,15 +139,28 @@ class Curve:
         else:
             e = (2, 3)
 
+        print(f"\n --------------------------------------------")
+        
         coset_reps = [self.field.g**k for k in range(0, self.aut_size)]
         cache_key = (self.p, self.j_invariant_flat)
         claimed = Curve._t0_claimed.setdefault(cache_key, set()) if self.t == 0 else None
         for u in coset_reps:
             A, B = self.ABFromJ(self.j)
+            
+            
+            
             cA, cB = u ** e[0] * A, u ** e[1] * B
+            
+            print(f"Trying twist with A={cA}, B={cB} for j={self.j}, t={self.t}")
+            
             E = EllipticCurve(self.F, [cA, cB])
             t = E.trace_of_frobenius()
+            
+            print(f"t={self.t} sage t = {t}")
+             
             if t == self.t:
+                
+                print(f"Found matching twist for j={self.j}, t={self.t} with A={cA}, B={cB}")
                 if claimed is not None and (cA, cB) in claimed:
                     continue
                 self.A, self.B = cA, cB
@@ -162,7 +175,13 @@ class Curve:
         if self.E is not None:
             return self.E
         A, B = self.getCoefficients()
-        self.E = EllipticCurve(self.F, [A, B])
+        print(f"Initialized curve with j={self.j}, A={A}, B={B}, t={self.t}")
+        try:
+            self.E = EllipticCurve(self.F, [A, B])
+        except Exception as e:
+            print(f"{Colors.FAIL}Error creating curve with t={self.t} j={self.j}, A={A}, B={B}: {e}{Colors.ENDC}")
+            raise 
+        # self.E = EllipticCurve(self.F, [A, B])
         return self.E
 
     def _inv(self, el) -> Tuple[int, Tuple]:
@@ -386,7 +405,6 @@ class GeometricCurve(Curve):
         self.B = self.F(B)
         self._create()
         
-        
         self.ID = (
             self.toID()
         )  # short hash ID for quick reference, not guaranteed unique but should be good enough for our scale
@@ -394,7 +412,6 @@ class GeometricCurve(Curve):
     def _create(self):
         # Materialize the actual Sage curve once the coefficients are fixed.
         self.E = EllipticCurve(self.F, [self.A, self.B])
-        
         npts = self.E.count_points()
         t = self.q + 1 - npts
         if self.t is None:

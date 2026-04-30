@@ -61,13 +61,16 @@ def parse_args():
         help="Show interactive slider UI (caches enumeration, recomputes Hecke on k/ell change)",
     )
     p.add_argument("--pmax", type=int, default=100, help="Upper prime bound for interactive mode")
+    p.add_argument("--plist", type=int, nargs="*", default=None, help="List of specific primes to process (for debugging)")
     return p.parse_args()
 
 
-def enumerate_only(primes, n, use_HCP=False, use_CN=False, q_max=10**20):
+def enumerate_only(primes, n, use_HCP=False, use_CN=False, q_max=10**20, plist=None):
     from lib.curves import reset_t0_cache
     cached = []
     for p in primes:
+        if plist is not None and p not in plist:
+            continue  # Filter to specific primes if plist is provided
         reset_t0_cache()
         nf = None
         if use_HCP or use_CN:
@@ -80,148 +83,58 @@ def enumerate_only(primes, n, use_HCP=False, use_CN=False, q_max=10**20):
         CC.enumerate_curves(use_HCP=use_HCP, use_CN=use_CN, add_curves=True, add_SS=True)
         cached.append((p, CC))
         print(f"Enumerated F_{p}")
+        
+        CC.check_SS()  # Sanity check for supersingular curve counts
     return cached
 
 
-def compute_traces(cached, ell, k, use_CN=False):
-    ps, Ts, good, infos = [], [], [], []
+def compute_traces(cached, ell, k, use_CN=False, plist=None):
+    ps, Ts, sageTs, diffs, good, infos = [], [], [], [], [], []
     for p, CC in cached:
         if p % ell == 0:
             continue
+
+        if plist is not None and p not in plist:
+            continue  # Filter to specific primes if plist is provided
+
+        q = CC.field.q  # Get the actual field size q = p^n from the classifier
         T, NC, NSS, traces, hk_evals, vals, full_r = CC.compute_hecke(k=k, level=ell, use_CN=use_CN)
-        ps.append(float(p))
-        Ts.append(float(T))
-        good.append(p % ell == 1)
-        infos.append(dict(p=p, T=T, NC=NC, NSS=NSS, traces=traces,
-                          hk_evals=hk_evals, vals=vals, full_r=full_r,
-                          sym=(p % ell == ell - 1)))
-    return ps, Ts, good, infos
 
-
-def run(p: int, l: int, k: int, n: int, use_HCP=False, use_CN=False):
-    primes = list(primerange(5, 50)) if p == -1 else [p]
-    # primes = list(primerange(10**6, 10**6 + 100)) if p == -1 else [p]
-    # 1000033
-    # 10093
-    # p=1091
-    # 100043
-    # 1000003
-    # 10050013, 10050017, 10050023, 10050049, 10050059, 10050071, 10050083, 10050101, 10050133, 10050137, 10050167, 10050181, 10050191, 10050197, 10050203, 10050217, 10050223, 10050233, 10050253, 10050283, 10050317, 10050319, 10050331, 10050353, 10050367, 10050377, 10050389, 10050407, 10050413, 10050419, 10050427, 10050437, 10050463, 10050493
-    p_powers = [n]
-    dsize = len(primes)
-    q_max = 10**20
-    levels = [l] if l != -1 else list(primerange(2, 100))
-    diffs = {}  # (ell, k) -> list of diffs per prime p
-
-    good_p = []
-    sym_p = []
-
-    full_r_p = []
-
-    for i in range(dsize):
-        p = primes[i]
-
-        # Clear t=0 claim cache to avoid cross-contamination between different p values
-        nf = None
-        if use_HCP or use_CN:
-            NFC = NumberFieldsClassifier_Fq(p)
-            nf = NFC.generate(p_powers, q_max=q_max)
-        q = p**n
-        if q > q_max:
-            print(f"Skipping F_{q} due to size > {q_max}")
-            continue
-        CC = CurvesClassifier_Fq(p, n, NF=nf)
-        CC.enumerate_curves(
-            use_HCP=use_HCP, use_CN=use_CN, add_curves=True, add_SS=True
+        clr = Colors.GREEN if q % ell == 1 else (Colors.WARNING if q % ell == ell - 1 else Colors.BOLD)
+        print(
+            f"{clr}-----------ell={ell}------------------p={p}, q={q}, q mod ell = {q % ell}{Colors.ENDC}"
         )
 
-        for ell in levels:
+        # EP = CC.count_EP(ell, use_CN=use_CN)
 
-            if p % ell == 0:
-                print(f"{Colors.WARNING}Skipping level ℓ={ell} for p={p} as it divides the field characteristic{Colors.ENDC}")
-                continue
-            # if p % ell == 1:
-            #    print(f"{Colors.GREEN}CAUTION, we have p ≡ 1 (mod {ell}), p={p}{Colors.ENDC}")
-            """print(
-                f"\n{Colors.BLUE}=== Computing Hecke operator T_{ell} for weight {k} ==={Colors.ENDC}\n"
-            )"""
-            T, NC, NSS, traces, hk_evals, vals, full_r = CC.compute_hecke(
-                k=args.k, level=ell, use_CN=use_CN
-            )
+        sage_T = 0
+        diff = 0
 
-            if full_r:
-                full_r_p.append(p)
+        # if ell < 5 or k == 0:
+        sage_T = 0#CuspForms(Gamma1(ell), k + 2).hecke_operator(q).trace()
+        diff = T - sage_T
+        # T = sage_T
+        # else:
+        # should be able to compute true trace by diff
+        sgn = 0
+        if p % ell == 1:
+            sgn = 1
+        elif p % ell == ell - 1:
+            sgn = -1
 
-            sgn = 0
-            if p % ell == 1:
-                sgn = 1
-                good_p.append(p)
-            elif p % ell == ell - 1:
-                sgn = -1
-                sym_p.append(p)
+        # diff = (ell - 1) * (1 + sgn**k) // 2
+        # T -= diff
 
-            diff_comp = (ell-1)*(1+sgn**k) // 2
-            EP = CC.count_EP(ell, use_CN=use_CN)
+        ps.append(float(q))  # Use q instead of p for plotting
+        Ts.append(float(T))
+        sageTs.append(float(sage_T))
+        diffs.append(float(diff))
 
-            trace_val = 0
-            diff = 0
-
-            if ell < 5 or k == 0:
-                trace_val = CuspForms(Gamma1(ell), k + 2).hecke_operator(q).trace()
-                diff = T - trace_val
-                T = trace_val
-            else:
-                T -= diff_comp
-
-            '''if diff_comp != diff and k > 0 and ell >= 5:
-                print(
-                    f"{Colors.FAIL}Discrepancy for p={p}, ell={ell}, k={k}: computed diff {diff_comp} does not match expected {diff}{Colors.ENDC}"
-                )'''
-
-            '''if ell < 5:
-                T = trace_val
-            else:
-                T -= diff_comp'''
-
-            diffs.setdefault((ell, k, (ell - 1) // 2), []).append(
-                (q, diff, T, trace_val, NC, NSS, vals, traces, hk_evals)
-            )
-
-            print(
-                f"{Colors.HEADER}p={p}, Total Hecke trace for level {ell} and weight {args.k}: {T}, sage trace: {trace_val}, difference: {T - trace_val}, EP: {EP}, NUM CURVES: {NC}, NUM SS: {NSS}, full_r: {full_r}{Colors.ENDC}"
-            )
-    print("\n" + "=" * 80)
-
-    print(f"Good p (p ≡ 1 mod ell): {good_p}")
-    print(f"Symmetric p (p ≡ -1 mod ell): {sym_p}")
-    print(f"p with rank 2: {full_r_p}")
-    print("=" * 80)
-    for key, entries in sorted(diffs.items()):
-        ell, k_, dim = key
-        for (
-            p_val,
-            d,
-            T_val,
-            trace_val,
-            NC_val,
-            NSS_val,
-            vals,
-            traces_val,
-            hk_evals_val,
-        ) in entries:
-            if p_val % ell == 1:
-                color = Colors.GREEN
-                label = " [q≡1 mod ell]"
-            elif p_val % ell == ell - 1:
-                color = Colors.WARNING if k_ % 2 == 1 else Colors.GREEN
-                label = " [q≡-1 mod ell]"
-            else:
-                color = Colors.ENDC
-                label = ""
-            # print(
-            #    f"    {color}q={p_val}: diff={d}, T={T_val}, sage_trace={trace_val}, vals={vals}, NC={NC_val}, NSS={NSS_val}, traces={traces_val}, hk_evals={hk_evals_val}, {label} [q≡{p_val % ell} mod {ell}]{Colors.ENDC}"
-            # )
-    return diffs, good_p, sym_p
+        good.append(p % ell == 1)
+        infos.append(dict(p=p, q=q, T=T, sage_T=sage_T, diff=diff, NC=NC, NSS=NSS, traces=traces,
+                          hk_evals=hk_evals, vals=vals, full_r=full_r,
+                          sym=(p % ell == ell - 1)))
+    return ps, Ts, sageTs, diffs, good, infos
 
 
 if __name__ == "__main__":
@@ -231,134 +144,210 @@ if __name__ == "__main__":
     print("=" * 80 + "")
     print(f"Using rank detection method: {Config.rank_method}")
     print("=" * 80 + "\n")
-    start_hcp = time.time()
-    diffs, good_p, sym_p = run(args.p, args.l, args.k, args.n, use_HCP=args.use_hcp, use_CN=args.use_cn)
-    end_hcp = time.time()
-    print(
-        f"{Colors.HEADER}Hecke Trace computed in {end_hcp - start_hcp:.2f} seconds{Colors.ENDC}"
-    )
 
-    if args.interactive:
-        primes = [p for p in primerange(5, args.pmax)]
-        print(f"Enumerating curves for {len(primes)} primes up to {args.pmax}...")
-        cached = enumerate_only(primes, args.n, use_HCP=args.use_hcp, use_CN=args.use_cn)
+    primes = [p for p in primerange(5, args.pmax)]
+    
+    # Cache for extension degrees (computed on-demand)
+    n_list = [1, 2, 3, 4, 5, 6, 7, 8]
+    cached_all = {}
+    
+    # Only enumerate for the initial n
+    init_n = args.n if args.n in n_list else 1
+    if args.plist:
+        print(f"Enumerating curves for n={init_n}, primes {args.plist}...")
+    else:
+        print(f"Enumerating curves for n={init_n}, {len(primes)} primes up to {args.pmax}...")
+    cached_all[init_n] = enumerate_only(primes, init_n, use_HCP=args.use_hcp, use_CN=args.use_cn, plist=args.plist)
 
-        ell_list = list(primerange(2, 100))
-        init_ell_idx = ell_list.index(args.l) if args.l in ell_list else 0
-        init_k = args.k
+    ell_list = list(primerange(2, 100))
+    init_ell_idx = ell_list.index(args.l) if args.l in ell_list else 0
+    init_k = args.k
 
-        fig, ax = plt.subplots(figsize=(11, 6))
-        plt.subplots_adjust(bottom=0.22)
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 10))
+    plt.subplots_adjust(bottom=0.15, hspace=0.3)
 
-        def get_colors(infos, good):
-            colors = []
-            for info, g in zip(infos, good):
-                if info["NC"] == 0:
-                    colors.append("red")
-                elif g:
-                    colors.append("green")
-                elif info["sym"]:
-                    colors.append("yellow")
-                elif float(info["T"]) == 0 and info["NC"] != 0:
-                    colors.append("turquoise")
-                else:
-                    colors.append("black")
-            return colors
+    def get_colors(infos, good):
+        colors = []
+        for info, g in zip(infos, good):
+            if info["NC"] == 0:
+                colors.append("red")
+            elif g:
+                colors.append("green")
+            elif info["sym"]:
+                colors.append("yellow")
+            elif float(info["T"]) == 0 and info["NC"] != 0:
+                colors.append("turquoise")
+            else:
+                colors.append("black")
+        return colors
 
-        def fmt_info(info):
-            vals_fmt = [round(float(v), 3) for v in info["vals"]]
-            return (
-                f"p = {info['p']}\n"
-                f"T = {info['T']},  NC = {info['NC']},  NSS = {info['NSS']},  full_r = {info['full_r']}\n"
-                f"traces    = {info['traces']}\n"
-                f"hk_evals  = {info['hk_evals']}\n"
-                f"vals      = {vals_fmt}"
+    def fmt_info(info, show_sage=False, show_diff=False):
+        # Truncate long lists to avoid rendering overflow
+        max_display = 10
+        vals_fmt = [round(float(v), 3) for v in info["vals"]]
+        traces = info['traces']
+        hk_evals = info['hk_evals']
+        
+        traces_str = str(traces[:max_display]) + (f" ... ({len(traces)} total)" if len(traces) > max_display else "")
+        hk_evals_str = str(hk_evals[:max_display]) + (f" ... ({len(hk_evals)} total)" if len(hk_evals) > max_display else "")
+        vals_str = str(vals_fmt[:max_display]) + (f" ... ({len(vals_fmt)} total)" if len(vals_fmt) > max_display else "")
+        
+        if show_sage:
+            result = (
+                f"p = {info['p']},  q = {info['q']}\n"
+                f"Sage T = {info['sage_T']},  NC = {info['NC']},  NSS = {info['NSS']},  full_r = {info['full_r']}\n"
+                f"traces    = {traces_str}\n"
+                f"hk_evals  = {hk_evals_str}\n"
+                f"vals      = {vals_str}"
             )
+        else:
+            result = (
+                f"p = {info['p']},  q = {info['q']}\n"
+                f"T = {info['T']},  NC = {info['NC']},  NSS = {info['NSS']},  full_r = {info['full_r']}\n"
+                f"traces    = {traces_str}\n"
+                f"hk_evals  = {hk_evals_str}\n"
+                f"vals      = {vals_str}"
+            )
+        if show_diff:
+            result += f"\ndiff = {info['diff']}"
+        return result
 
-        ps0, Ts0, good0, infos0 = compute_traces(cached, ell_list[init_ell_idx], init_k, args.use_cn)
-        state = {"ps": ps0, "Ts": Ts0, "infos": infos0, "good": good0, "log": True}
+    ps0, Ts0, sageTs0, diffs0, good0, infos0 = compute_traces(cached_all[init_n], ell_list[init_ell_idx], init_k, args.use_cn, plist=args.plist)
+    state = {"ps": ps0, "Ts": Ts0, "sageTs": sageTs0, "diffs": diffs0, "infos": infos0, "good": good0, "log": True, "n": init_n, "plist": args.plist}
 
-        def draw_ax(ell, k, ps, Ts, good, infos):
-            ax.cla()
-            ax.scatter(ps, Ts, s=30, color=get_colors(infos, good), zorder=3)
-            ax.axhline(0, color="gray", linewidth=0.8, linestyle="--")
-            ax.set_xlabel("p", fontsize=13)
-            ax.set_ylabel(f"tr $T_{{{ell}}}$", fontsize=13)
-            ax.set_title(f"Hecke trace $T_{{{ell}}}$, weight $k={k}$", fontsize=14)
-            ax.set_yscale("symlog" if state["log"] else "linear")
-            ax.grid(True, alpha=0.3)
-            a = ax.annotate("", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
-                            bbox=dict(boxstyle="round,pad=0.5", fc="lightyellow", ec="gray", alpha=0.95),
-                            fontsize=8, fontfamily="monospace", visible=False)
-            state["annot"] = a
+    def draw_ax(ell, k, n, ps, Ts, sageTs, diffs, good, infos):
+        # Top plot: Sage computed traces
+        ax1.cla()
+        ax1.scatter(ps, sageTs, s=30, color=get_colors(infos, good), zorder=3)
+        ax1.axhline(0, color="gray", linewidth=0.8, linestyle="--")
+        ax1.set_xlabel("q", fontsize=13)
+        ax1.set_ylabel(f"Sage tr $T_{{{ell}}}$", fontsize=13)
+        ax1.set_title(f"Sage Hecke trace $T_{{{ell}}}$, weight $k={k}$, $n={n}$", fontsize=14)
+        ax1.set_yscale("symlog" if state["log"] else "linear")
+        ax1.grid(True, alpha=0.3)
+        
+        # Bottom plot: Computed T and T-diff
+        ax2.cla()
+        Ts_corrected = [T - d for T, d in zip(Ts, diffs)]
+        ax2.scatter(ps, Ts, s=30, color="blue", label="T (computed)", alpha=0.7, zorder=3)
+        ax2.scatter(ps, Ts_corrected, s=30, color="orange", label="T - diff", alpha=0.7, zorder=3)
+        ax2.axhline(0, color="gray", linewidth=0.8, linestyle="--")
+        ax2.set_xlabel("q", fontsize=13)
+        ax2.set_ylabel(f"Trace values", fontsize=13)
+        ax2.set_title(f"Computed traces, weight $k={k}$, $n={n}$", fontsize=14)
+        ax2.set_yscale("symlog" if state["log"] else "linear")
+        ax2.legend(loc="upper right")
+        ax2.grid(True, alpha=0.3)
+        
+        # Annotations for both plots
+        a1 = ax1.annotate("", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
+                        bbox=dict(boxstyle="round,pad=0.5", fc="lightyellow", ec="gray", alpha=0.95),
+                        fontsize=8, fontfamily="monospace", visible=False)
+        a2 = ax2.annotate("", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
+                        bbox=dict(boxstyle="round,pad=0.5", fc="lightyellow", ec="gray", alpha=0.95),
+                        fontsize=8, fontfamily="monospace", visible=False)
+        state["annot1"] = a1
+        state["annot2"] = a2
 
-        draw_ax(ell_list[init_ell_idx], init_k, ps0, Ts0, good0, infos0)
+    draw_ax(ell_list[init_ell_idx], init_k, init_n, ps0, Ts0, sageTs0, diffs0, good0, infos0)
 
-        ax_ell = plt.axes([0.15, 0.10, 0.65, 0.03])
-        ax_k   = plt.axes([0.15, 0.05, 0.65, 0.03])
-        ax_log = plt.axes([0.82, 0.10, 0.10, 0.04])
-        from matplotlib.widgets import Button
-        s_ell   = Slider(ax_ell, 'ℓ (index)', 0, len(ell_list) - 1, valinit=init_ell_idx, valstep=1)
-        s_k     = Slider(ax_k,   'k',          0, 12,                valinit=init_k,       valstep=1)
-        btn_log = Button(ax_log, 'log: ON', color="lightblue")
-        ell_label = ax_ell.text(1.02, 0.5, f"ℓ={ell_list[init_ell_idx]}", transform=ax_ell.transAxes, va="center")
+    ax_ell = plt.axes([0.15, 0.09, 0.65, 0.015])
+    ax_k   = plt.axes([0.15, 0.06, 0.65, 0.015])
+    ax_n   = plt.axes([0.15, 0.03, 0.65, 0.015])
+    ax_log = plt.axes([0.82, 0.07, 0.10, 0.03])
+    from matplotlib.widgets import Button
+    s_ell   = Slider(ax_ell, 'ℓ (index)', 0, len(ell_list) - 1, valinit=init_ell_idx, valstep=1)
+    s_k     = Slider(ax_k,   'k',          0, 12,                valinit=init_k,       valstep=1)
+    s_n     = Slider(ax_n,   'n',          1, len(n_list),       valinit=init_n,       valstep=1)
+    btn_log = Button(ax_log, 'log: ON', color="lightblue")
+    ell_label = ax_ell.text(1.02, 0.5, f"ℓ={ell_list[init_ell_idx]}", transform=ax_ell.transAxes, va="center")
 
-        def toggle_log(_):
-            state["log"] = not state["log"]
-            btn_log.label.set_text("log: ON" if state["log"] else "log: OFF")
-            ell = ell_list[int(s_ell.val)]
-            k   = int(s_k.val)
-            draw_ax(ell, k, state["ps"], state["Ts"], state["good"], state["infos"])
-            fig.canvas.draw_idle()
+    def toggle_log(_):
+        state["log"] = not state["log"]
+        btn_log.label.set_text("log: ON" if state["log"] else "log: OFF")
+        ell = ell_list[int(s_ell.val)]
+        k   = int(s_k.val)
+        n   = int(s_n.val)
+        draw_ax(ell, k, n, state["ps"], state["Ts"], state["sageTs"], state["diffs"], state["good"], state["infos"])
+        fig.canvas.draw_idle()
 
-        btn_log.on_clicked(toggle_log)
+    btn_log.on_clicked(toggle_log)
 
-        def update(_):
-            ell = ell_list[int(s_ell.val)]
-            k   = int(s_k.val)
-            ps, Ts, good, infos = compute_traces(cached, ell, k, args.use_cn)
-            state["ps"], state["Ts"], state["infos"], state["good"] = ps, Ts, infos, good
-            draw_ax(ell, k, ps, Ts, good, infos)
-            ell_label.set_text(f"ℓ={ell}")
-            fig.canvas.draw_idle()
+    def update(_):
+        ell = ell_list[int(s_ell.val)]
+        k   = int(s_k.val)
+        n   = int(s_n.val)
+        
+        # Enumerate on-demand if not cached
+        if n not in cached_all:
+            if args.plist:
+                print(f"Enumerating curves for n={n}, primes {args.plist}...")
+            else:
+                print(f"Enumerating curves for n={n}, {len(primes)} primes up to {args.pmax}...")
+            cached_all[n] = enumerate_only(primes, n, use_HCP=args.use_hcp, use_CN=args.use_cn, plist=args.plist)
+        
+        ps, Ts, sageTs, diffs, good, infos = compute_traces(cached_all[n], ell, k, args.use_cn, plist=state.get("plist"))
+        state["ps"], state["Ts"], state["sageTs"], state["diffs"], state["infos"], state["good"], state["n"] = ps, Ts, sageTs, diffs, infos, good, n
+        draw_ax(ell, k, n, ps, Ts, sageTs, diffs, good, infos)
+        ell_label.set_text(f"ℓ={ell}")
+        fig.canvas.draw_idle()
 
-        def on_hover(event):
-            annot = state.get("annot")
-            if annot is None or event.inaxes != ax or not state["ps"]:
-                if annot:
-                    annot.set_visible(False)
-                fig.canvas.draw_idle()
-                return
-            ps, Ts, infos = state["ps"], state["Ts"], state["infos"]
-            xlim, ylim = ax.get_xlim(), ax.get_ylim()
+    def on_hover(event):
+        # Handle hover for both axes
+        annot1 = state.get("annot1")
+        annot2 = state.get("annot2")
+        
+        if event.inaxes == ax1 and annot1 is not None and state["ps"]:
+            ps, sageTs, infos = state["ps"], state["sageTs"], state["infos"]
+            xlim, ylim = ax1.get_xlim(), ax1.get_ylim()
             xs = (xlim[1] - xlim[0]) or 1
             ys = (ylim[1] - ylim[0]) or 1
             dists = [((event.xdata - px) / xs) ** 2 + ((event.ydata - ty) / ys) ** 2
-                     for px, ty in zip(ps, Ts)]
+                     for px, ty in zip(ps, sageTs)]
             idx = min(range(len(dists)), key=lambda i: dists[i])
             if dists[idx] < 2e-4:
-                annot.xy = (ps[idx], Ts[idx])
-                annot.set_text(fmt_info(infos[idx]))
-                annot.set_visible(True)
+                annot1.xy = (ps[idx], sageTs[idx])
+                annot1.set_text(fmt_info(infos[idx], show_sage=True))
+                annot1.set_visible(True)
             else:
-                annot.set_visible(False)
-            fig.canvas.draw_idle()
+                annot1.set_visible(False)
+            if annot2:
+                annot2.set_visible(False)
+        elif event.inaxes == ax2 and annot2 is not None and state["ps"]:
+            ps, Ts, diffs, infos = state["ps"], state["Ts"], state["diffs"], state["infos"]
+            xlim, ylim = ax2.get_xlim(), ax2.get_ylim()
+            xs = (xlim[1] - xlim[0]) or 1
+            ys = (ylim[1] - ylim[0]) or 1
+            # Check both T and T-diff points
+            Ts_corrected = [T - d for T, d in zip(Ts, diffs)]
+            dists_T = [((event.xdata - px) / xs) ** 2 + ((event.ydata - ty) / ys) ** 2
+                       for px, ty in zip(ps, Ts)]
+            dists_Tcorr = [((event.xdata - px) / xs) ** 2 + ((event.ydata - ty) / ys) ** 2
+                           for px, ty in zip(ps, Ts_corrected)]
+            idx_T = min(range(len(dists_T)), key=lambda i: dists_T[i])
+            idx_Tcorr = min(range(len(dists_Tcorr)), key=lambda i: dists_Tcorr[i])
+            
+            if dists_T[idx_T] < dists_Tcorr[idx_Tcorr] and dists_T[idx_T] < 2e-4:
+                annot2.xy = (ps[idx_T], Ts[idx_T])
+                annot2.set_text(f"T (computed)\n" + fmt_info(infos[idx_T], show_diff=True))
+                annot2.set_visible(True)
+            elif dists_Tcorr[idx_Tcorr] < 2e-4:
+                annot2.xy = (ps[idx_Tcorr], Ts_corrected[idx_Tcorr])
+                annot2.set_text(f"T - diff = {Ts_corrected[idx_Tcorr]} (diff = {diffs[idx_Tcorr]})\n" + fmt_info(infos[idx_Tcorr], show_diff=False))
+                annot2.set_visible(True)
+            else:
+                annot2.set_visible(False)
+            if annot1:
+                annot1.set_visible(False)
+        else:
+            if annot1:
+                annot1.set_visible(False)
+            if annot2:
+                annot2.set_visible(False)
+        fig.canvas.draw_idle()
 
-        fig.canvas.mpl_connect("motion_notify_event", on_hover)
-        s_ell.on_changed(update)
-        s_k.on_changed(update)
-        plt.show()
-    else:
-        for (ell, k_, dim), entries in sorted(diffs.items()):
-            ps = [float(q) for (q, d, T, tv, NC, NSS, vals, tr, hk) in entries]
-            Ts = [float(T) for (q, d, T, tv, NC, NSS, vals, tr, hk) in entries]
-            colors = ["green" if p in good_p else "red" if t == 0 else "steelblue" for p, t in zip(ps, Ts)]
-            fig, ax = plt.subplots(figsize=(10, 5))
-            ax.scatter(ps, Ts, s=30, color=colors, zorder=3)
-            ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
-            ax.set_xlabel("p", fontsize=13)
-            ax.set_ylabel(f"tr $T_{{{ell}}}$", fontsize=13)
-            ax.set_title(f"Hecke trace $T_{{{ell}}}$, weight $k={k_}$", fontsize=14)
-            ax.grid(True, alpha=0.3)
-            plt.tight_layout()
-            plt.show()
+    fig.canvas.mpl_connect("motion_notify_event", on_hover)
+    s_ell.on_changed(update)
+    s_k.on_changed(update)
+    s_n.on_changed(update)
+    plt.show()
