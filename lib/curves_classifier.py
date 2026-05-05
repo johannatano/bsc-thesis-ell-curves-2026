@@ -34,6 +34,148 @@ highest_ell = 0
 # Curve enumeration and classification
 # =============================================================================
 
+'''
+def num_order_N(N, n1, n2):
+    result = 1
+    for l, a in factor(ZZ(N)):
+        e1 = ZZ(n1).valuation(l)
+        e2 = ZZ(n2).valuation(l)
+        result *= l ** (e1 + e2) - l ** (min(a - 1, e1) + min(a - 1, e2))
+    return result'''
+
+'''
+def num_order_N(N, n1, n2):
+    if n2 % N != 0:
+        return 0  # max order is n2; if N doesn't divide it, nothing
+    # else: count elements of order exactly N in Z/n1 x Z/n2
+    return phi(N) * gcd(N, n1)'''
+
+
+def phi(n):
+    result = n
+    p = 2
+    while p * p <= n:
+        if n % p == 0:
+            while n % p == 0:
+                n //= p
+            result -= result // p
+        p += 1
+    if n > 1:
+        result -= result // n
+    return result
+
+from math import gcd
+
+
+def num_order_N(N, n1, n2):
+    if n2 % N != 0:
+        return 0
+    # distinct primes of N
+    primes = []
+    n = N
+    p = 2
+    while p * p <= n:
+        if n % p == 0:
+            primes.append(p)
+            while n % p == 0:
+                n //= p
+        p += 1
+    if n > 1:
+        primes.append(n)
+
+    # inclusion-exclusion
+    total = 0
+    r = len(primes)
+    for mask in range(1 << r):
+        d = N
+        bits = 0
+        for i in range(r):
+            if mask & (1 << i):
+                d //= primes[i]
+                bits += 1
+        sign = -1 if bits % 2 else 1
+        total += sign * gcd(d, n1) * gcd(d, n2)
+    return total
+
+
+'''
+def l_sylow_structure(l, f_pi, f, N_pts):
+    """Returns (s1, s2) with s1 <= s2, s1 + s2 = v_l(#E).
+    Full l-Sylow of E(Fq), no capping at N."""
+
+    s1 = 0
+    vl_pi = ZZ(f_pi).valuation(l)
+    vl_pts = ZZ(N_pts).valuation(l)
+
+    for k in range(1, vl_pts // 2 + 1):
+        if ZZ(f).valuation(l) + k <= vl_pi:  # E[l^k] subset E(Fq)
+            s1 = k
+        else:
+            break
+    s2 = vl_pts - s1
+    return s1, s2'''
+
+
+def l_sylow_structure(l, a, f_pi, f, N_pts, q):
+    """Returns (s1, s2) capped at a."""
+    vl_pts = ZZ(N_pts).valuation(l)
+    vl_pi = ZZ(f_pi).valuation(l)
+    vl_f = ZZ(f).valuation(l)
+    # Hard upper bound on s1
+    max_s1 = min(a, vl_pts // 2, ZZ(q - 1).valuation(l))
+    # Embedding height
+    h = vl_pi - vl_f
+    s1 = min(max_s1, h)  # embedding gives at most h, capped at max_s1
+    s2 = min(a, vl_pts - s1)
+    return s1, s2
+
+
+def invariants(N, f_pi, f, N_pts, q):
+    """Returns (n1, n2) with n1 | n2, n1*n2 = #E[N](Fq)
+    such that E[N](Fq) cap E(Fq) = Z/n1 x Z/n2."""
+    n1, n2 = 1, 1
+    for l in ZZ(N).prime_factors():
+        a = ZZ(N).valuation(l)
+        s1, s2 = l_sylow_structure(l, a, f_pi, f, N_pts, q)
+        n1 *= l**s1
+        n2 *= l**s2
+    return n1, n2
+
+
+def num_P(level, f_pi, f, N_pts, q):
+    if level == 1:
+        return 1
+    result = 1
+    for l, a in factor(ZZ(level)):
+        
+        h = max(0, ZZ(f_pi).valuation(l) - ZZ(f).valuation(l)) if ZZ(f_pi)*ZZ(f) > 0 else None
+        v_q1 = ZZ(q - 1).valuation(l)
+        v_N = ZZ(N_pts).valuation(l)
+        
+        e1 = min(h, v_q1, v_N // 2) if h is not None else min(v_q1, v_N // 2)
+        e2 = v_N - e1
+        s1 = min(a, e1)
+        s2 = min(a, e2)
+        # exact-order-l^a count in Z/l^s1 x Z/l^s2
+        result *= l ** (s1 + s2) - l ** (min(a - 1, s1) + min(a - 1, s2))
+    return result
+
+
+def num_P_SS(level, N_pts, q):
+    if level == 1:
+        return 1
+    result = 1
+    for l, a in factor(ZZ(level)):
+        v_q1 = ZZ(q - 1).valuation(l)
+        v_N = ZZ(N_pts).valuation(l)
+        e1 = min(v_q1, v_N // 2)
+        e2 = v_N - e1
+        s1 = min(a, e1)
+        s2 = min(a, e2)
+        # exact-order-l^a count in Z/l^s1 x Z/l^s2
+        result *= l ** (s1 + s2) - l ** (min(a - 1, s1) + min(a - 1, s2))
+    return result
+
 
 class EllFiniteFieldCatalogue:
     """In-memory catalogue of curves over a fixed finite field F_{p^n}.
@@ -109,7 +251,7 @@ class CurvesClassifier_Fq:
         else:
             return self.nth_roots_unity[0]
 
-    def enumerate_curves(self, use_HCP: bool = False, use_CN: bool = False, add_SS: bool = True, add_curves:bool = True) -> None:
+    def enumerate_curves(self, use_HCP: bool = False, use_CN: bool = False, add_SS: bool = True, add_curves:bool = True, special_only:bool = False) -> None:
         """Enumerate curves over the current finite field.
 
         `use_HCP` switches to the CM/Hilbert-class-polynomial pipeline.
@@ -123,7 +265,7 @@ class CurvesClassifier_Fq:
         # if using CN, we never get j invariants hence no coefficients, this means we have to compute based on t and for t = 0 the uniqueness for twists breaks down, so we need to track which (A,B) pairs have already been claimed by t=0 curves to avoid duplicates
         reset_t0_cache()
 
-        print(f"{Colors.HEADER}------------------------------Starting curve enumeration for p={self.field.p}, n={self.field.n} F_{self.field.q} with use_HCP={use_HCP}, use_CN={use_CN}, add_SS={add_SS}, add_curves={add_curves}{Colors.ENDC}")
+        # print(f"{Colors.HEADER}------------------------------Starting curve enumeration for p={self.field.p}, n={self.field.n} F_{self.field.q} with use_HCP={use_HCP}, use_CN={use_CN}, add_SS={add_SS}, add_curves={add_curves}{Colors.ENDC}")
 
         if use_HCP or use_CN:
 
@@ -136,7 +278,8 @@ class CurvesClassifier_Fq:
                     orders = nf.getOrders(self.field.n)
                     for order in orders:
                         f = order.conductor
-                        if not use_CN or (D_K in [-3, -4] and int(f) == 1):
+                        # TODO: EDIT BACK IN FALSE TO ALWAYS USE
+                        if True:#not use_CN or (D_K in [-3, -4] and int(f) == 1):
                             j_invs = get_j_invariants_from_order(D_K * f**2, f, self.field)
                             for j_inv in j_invs:
                                 order.add_j_invariant(j_inv)
@@ -152,17 +295,20 @@ class CurvesClassifier_Fq:
             # aimed at ordinary CM data and does not cover these cases by itself.
             if add_SS:
                 if self.field.p % 3 == 2:
-                    print(f"{Colors.FAIL}j-invariant 0 is SS{Colors.ENDC}")
+                    print(f"{Colors.FAIL}j-invariant 0 is SS, (6, q-1)={gcd(6, self.field.q-1)}{Colors.ENDC}")
                     self.add_ss_curve_by_j(self.field.F(0))
 
                 if self.field.p % 4 == 3:
-                    print(f"{Colors.FAIL}j-invariant 1728 is SS{Colors.ENDC}")
+                    print(
+                        f"{Colors.FAIL}j-invariant 1728 is SS, 1728 mod p = {1728 % self.field.p}, (4, q-1)={gcd(4, self.field.q-1)}{Colors.ENDC}"
+                    )
                     self.add_ss_curve_by_j(self.field.F(1728))
 
                 SS_poly = supersingular_j_polynomial(self.field.p)
                 SS_poly_Fq = SS_poly.change_ring(self.field.F)
 
                 for r in SS_poly_Fq.roots(multiplicities=False):
+                    print(f"{Colors.HEADER}Adding supersingular curve with j={r}{Colors.ENDC}")
                     self.add_ss_curve_by_j(
                         self.field.F(r)
                     )  # we know these are SS, so t=0, and f_E=1 since they have maximal endomorphism ring
@@ -172,14 +318,23 @@ class CurvesClassifier_Fq:
         elif add_curves:
             _t0 = time.perf_counter()
             precompute_conductor = True
-            for j in tqdm(self.field.F, total=self.field.q, desc=f"F_{self.field.q}", unit="j", ncols=80, ascii=True):
-                self.add_curves_by_j(j, pre_compute_conductor=precompute_conductor)
+
+            if special_only:
+                self.add_curves_by_j(
+                    self.field.F(0), pre_compute_conductor=precompute_conductor
+                )
+                self.add_curves_by_j(
+                    self.field.F(1728), pre_compute_conductor=precompute_conductor
+                )
+            else:
+                for j in tqdm(self.field.F, total=self.field.q, desc=f"F_{self.field.q}", unit="j", ncols=80, ascii=True):
+                    self.add_curves_by_j(j, pre_compute_conductor=precompute_conductor)
 
         global highest_ell
         # Standard count of isomorphism classes over F_q in characteristic > 3.
         NE = 2*(self.field.q -2) + gcd(4, self.field.q-1) + gcd(6, self.field.q-1)
 
-        print(f"{Colors.HEADER}Finished enumerating curves over F_{self.field.q}, total size of catalogue: {self.catalogue.size}, expected size from formula: {NE}{Colors.ENDC}")
+        # print(f"{Colors.HEADER}Finished enumerating curves over F_{self.field.q}, total size of catalogue: {self.catalogue.size}, expected size from formula: {NE}{Colors.ENDC}")
         # if self.catalogue.size != NE:
         #    print(f"{Colors.FAIL}Warning: total number of curves in catalogue ({self.catalogue.size}) does not match expected number from formula ({NE}), there may be duplicates or missing curves{Colors.ENDC}")
         # else:
@@ -187,33 +342,106 @@ class CurvesClassifier_Fq:
 
         # print(f"Enumeration done in {time.perf_counter() - _t0:.2f}s")
 
-    def check_SS(self)->None:
+    def check_SS(self, level = 1)->None:
         N = 0
+        NQ = 0
+        all_js = []
+        all_ts = []
+
+        N_pts = 0
         for ell_t in self.catalogue.isogeny_classes():
 
-            nt = 0
-            js = []
             if not ell_t.ordinary:
+                js = []
+                is_Q = False
+
+                t_color = Colors.BOLD
+                if ell_t.t == 0:
+                    t_color = Colors.GREEN
+                elif abs(ell_t.t) == self.HB:
+                    t_color = Colors.WARNING
+                    is_Q = True
+                elif abs(ell_t.t) == math.isqrt(2 * self.field.q) or abs(
+                    ell_t.t) == math.isqrt(3 * self.field.q):
+                    t_color = Colors.FAIL
+                else:
+                    t_color = Colors.BLUE
+
+                '''print(
+                    f"{t_color}ELL_T t={ell_t.t}, char={self.field.p}, f_pi = {ZZ(ell_t.f_pi).factor() if ell_t.f_pi else None}, D_K = {ZZ(ell_t.D_K).factor() if ell_t.D_K else 0}, O_K = {ell_t.O_K}, N(t)={ell_t.N_t}{Colors.ENDC}"
+                )'''
+
+                if level is not None:
+                    q_color = Colors.BOLD
+                    if self.field.q % level == 1:
+                        q_color = Colors.GREEN
+                    elif self.field.q % level == level - 1:
+                        q_color = Colors.WARNING
+                    else:
+                        q_color = Colors.BOLD
+
+                    fx_roots = ell_t.fx_pi.roots()
+                    r_mod_ell_list = []
+                    for root, multiplicity in fx_roots:
+                        r_mod_ell = Zmod(level)(root)
+                        r_mod_ell_list.append(r_mod_ell)
+                    '''print(
+                        f"level={level}: fx_roots={ell_t.fx_pi.roots()}, r_mod_ell_list={r_mod_ell_list}, {q_color}q mod level = {self.field.q % level}{Colors.ENDC}, Npts={ell_t.N_pts}, Npts mod level = {ell_t.N_pts % level}"
+                    )'''
+
+                # Append colored t value
+                all_ts.append(f"{t_color}{ell_t.t}{Colors.ENDC}")
+
                 for f, curves_list in ell_t.curves_by_order.items():
                     for c in curves_list:
                         N += 1
-                        nt += 1
+                        if is_Q:
+                            NQ += 1
                         js.append(c.j)
+                        if c.j not in all_js:
+                            all_js.append(c.j)
+
+                        if level is not None:    
+                            torsion_subgroup = TorsionSubgroup(c, level)
+                            torsion_subgroup.compute_rank(f_pi=-1, use_generators=False)
+                            r = torsion_subgroup.rank
+
+                            N_pts += level**r - 1
+
+                            '''print(
+                                f"{Colors.FAIL}SS CURVE rank = {r} for curve with j={c.j}, is_j0={(c.j).is_zero()}, is_j1728={(c.j-1728).is_zero()}{Colors.ENDC}"
+                            )'''
 
         if self.field.n % 2 == 0:
-            NSS = num_supersingular_curves_q_square(self.field.p)
-            NQ = quaternion_class_number(self.field.p)
-
-            if N != NSS:
-                print(f"{Colors.FAIL}Warning: number of supersingular curves found ({N}) does not match expected count from formula ({NSS}) for q={self.field.q}{Colors.ENDC}")
+            N_exp = num_supersingular_curves_q_square(self.field.p)
+            NQ_exp = 2 * quaternion_class_number(self.field.p)
+            ts_formatted = "[" + ", ".join(all_ts) + "]"
+            if N != N_exp:
+                print(
+                    f"{Colors.FAIL}Warning: number of supersingular curves found ({N}) does not match expected count from formula ({N_exp}) for q={self.field.q}, js = {all_js}, ts = {ts_formatted}{Colors.ENDC}"
+                )
             else:
-                print(f"{Colors.GREEN}Verified count of supersingular curves: {N} matches expected count from formula for q={self.field.q}{Colors.ENDC}")
+                print(
+                    f"Verified count of supersingular curves: {N} matches expected count from formula for q={self.field.q}, js = {all_js}, ts = {ts_formatted}"
+                )
 
-            print(
-                f"EXPECTING 2x{NQ}={2*NQ} supersingular curves at t=±2√q"
-            )
+            if NQ != NQ_exp:
+                print(
+                    f"{Colors.FAIL}Warning: number of supersingular curves with t=±2√q found ({NQ}) does not match expected count from quaternion class number formula ({NQ_exp}) for q={self.field.q}, js = {all_js}, ts = {ts_formatted}{Colors.ENDC}"
+                )
+            else:
+                print(
+                    f"{Colors.WARNING}Supersingular curves with t=±2√q found: ({NQ}) matches expected count{Colors.ENDC}"
+                )
         else:
-            print(f"Found {N} total supersingular curves across all traces for q={self.field.q}")
+            ts_formatted = "[" + ", ".join(all_ts) + "]"
+            print(
+                f"Found {N} supersingular curves across all traces for q={self.field.q}, js = {all_js}, ts = {ts_formatted}"
+            )
+
+        print(
+            f"{Colors.GREEN if N_pts > 0 else Colors.BOLD}TOTAL N TORSION POINTS CONTRIBUTED BY SS CURVES: {N_pts}{Colors.ENDC}"
+        )
 
     def add_curves_by_j(self, j, t: Optional[int] = None, f_E: Optional[int] = None, compute_twists: bool = True, pre_compute_conductor=False) -> None:
         """Create the geometric twist family attached to a given j-invariant."""
@@ -252,6 +480,9 @@ class CurvesClassifier_Fq:
         twists = E.compute_twists()
         for E_t in twists:
             self.catalogue.add(E_t)
+            print(
+                f"{Colors.HEADER}Adding curve with j={j}{Colors.ENDC}"
+            )
 
     def add_nf_curve(self, j, t: int, f_E: int) -> None:
         """Insert a lightweight CM-derived curve record into the catalogue."""
@@ -332,67 +563,117 @@ class CurvesClassifier_Fq:
         full_r = False
         _t0 = time.perf_counter()
 
-        for ell_t in tqdm(isogeny_classes, desc="computing torsion", unit="ic", ncols=80, ascii=True, leave=False):
+        for ell_t in isogeny_classes:
 
-            if ell_t.N_pts % level != 0:
+            if ell_t.N_pts % level != 0: # note, this holds true even if level not prime, converse nott rue tho, we cans till end up with 0 pts of order N
                 continue
+
             traces.append(ell_t.t)
 
             hk = ell_t.eval_hk_mod_fx(level, hk_symbolic)
             hk_evals.append(hk)
 
+            MAX_N = num_order_N(level, level, level)
+
+            vl_fpi = ZZ(ell_t.f_pi).valuation(level)
+            clr = Colors.BOLD if vl_fpi == 0 else Colors.WARNING
+
+            '''if not ell_t.ordinary:
+                print(
+                    f"{clr}Computing EN structure for level={level}, vl_pi={ZZ(ell_t.f_pi).valuation(level)}, f_pi={ell_t.f_pi} | N_pts={ell_t.N_pts}, #E^2 mod ell = {ell_t.N_pts % level**2}, q mod level = {self.field.q % level}, MAX_N={MAX_N}{Colors.ENDC}"
+                )'''
+
             # note, the contribution for each curve / order does not have to be integer value, for |aut| > 2 we can get n/3 or n/2 sums but these sum to integers over twists, uncomment below to see this in action
             if use_CN and ell_t.ordinary:
+                has_full_r = False
+
                 for f, o in ell_t.orders.items():
                     aut_size = 2
                     if ell_t.D_K in [-3, -4] and int(f) == 1:
                         aut_size = 6 if ell_t.D_K == -3 else 4
-                    r = 2 if ZZ(f).valuation(level) < ZZ(ell_t.f_pi).valuation(level) else 1
 
-                    if r == 2:
-                        full_r = True
+                    NP = num_P(level, ell_t.f_pi, f, ell_t.N_pts, self.field.q)
 
-                    T -= hk * o.class_number * (level**r-1) / aut_size
-                    vals.append(-hk * o.class_number * (level**r - 1) / aut_size)
+                    accum_val = hk * o.class_number * NP / aut_size
+                    T -= accum_val
+                    vals.append(accum_val)
+
+                    '''print(f"t={ell_t.t}, hk={hk}, NC={o.class_number}, NP={NP}, contribution to count: {accum_val}")'''
+
                     NC += o.class_number
-            elif ell_t.ordinary:
+
+                    '''for f2, curves_list in ell_t.curves_by_order.items():
+                        if ZZ(f2) == ZZ(f):
+                            idx = 0
+                            for c in curves_list:
+
+                                # torsion_subgroup = TorsionSubgroup(c, level)
+                                # NP_enum = torsion_subgroup.get_num_points_exact_order()
+
+                                l_syl = invariants(level, ell_t.f_pi, f, ell_t.N_pts, self.field.q)
+
+                                if not has_full_r and l_syl[0] == level and l_syl[1] == level:
+                                    has_full_r = True
+                                    # print(f"________________________DETECT FULL RANK {level}________________________")
+
+                                NP_enum2 = num_order_N(level, l_syl[0], l_syl[1])
+
+                                if idx == 0:
+                                    print(
+                                        f"l_sylow_structure = {l_syl}, ab invariants = {c.getSageCurve().abelian_group().invariants()}, NP_enum2={NP_enum2}, NP_enum={NP_enum}"
+                                    )
+
+                                idx += 1
+
+                                if NP_enum != NP:
+                                    print(
+                                        f"\n {Colors.FAIL}COMPUTED {NP} does not match ENUMERATED {NP_enum}{Colors.ENDC}"
+                                    )
+                                    print(f"Details: t={ell_t.t}, D_K={ell_t.D_K}, f_pi={ell_t.f_pi}, N_pts={ell_t.N_pts}, class_number={o.class_number}, j0={c.is_j0}, j1728={c.is_j1728}")
+                                    pts = c.getSageCurve().points()
+                                    for P in pts:
+                                        print(f"Point {P} has order {P.order()}")'''
+
+                '''print(
+                    f"{Colors.FAIL if vl_fpi > 0 and not has_full_r else (Colors.GREEN if vl_fpi > 0 and has_full_r else Colors.BOLD)}---------COMPUTED has_full_r={has_full_r}{Colors.ENDC}"
+                )'''
+
+            else:
+
+                # TODO: we skip this for now to debug
+                # if abs(ell_t.t) == self.HB:
+                #    continue
+
+                '''fx_roots = ell_t.fx_pi.roots()
+                r_mod_ell_list = []
+                for root, multiplicity in fx_roots:
+                    r_mod_ell = Zmod(level)(root)
+                    r_mod_ell_list.append(r_mod_ell)'''
+
+                '''print(
+                    f"SS ORDER, t={ell_t.t}, D_K={ell_t.D_K}, f_pi={ell_t.f_pi}, N_pts={ell_t.N_pts}, q mod level = {self.field.q % level}, K={ell_t.K}, orders={ell_t.orders}{Colors.ENDC}"
+                )'''
 
                 for f, curves_list in ell_t.curves_by_order.items():
-                    r = 2 if ZZ(f).valuation(level) < ZZ(ell_t.f_pi).valuation(level) else 1
-                    for c in curves_list:
-                        T -= hk * (level**r-1) / c.aut_size
-                        vals.append(-hk * (level**r - 1) / c.aut_size)
-                        NC += 1
-                        '''if c.aut_size > 2:
-                            print(f"accum curve with t={ell_t.t}, aut_size={c.aut_size}, r={r}, hk={hk}, npts={(level**r-1)}, numerator={(-hk * (level**r-1))}, contribution to T: {(-hk * (level**r-1)) / c.aut_size}")'''
-            else:
-                for f, curves_list in ell_t.curves_by_order.items():
-                    r2 = (
-                        2
-                        if ZZ(f).valuation(level) < ZZ(ell_t.f_pi).valuation(level)
-                        else 1
-                    )
+
+                    '''print(
+                        f"{Colors.HEADER}SS CURVES with f={f}{Colors.ENDC}"
+                    )'''
                     for c in curves_list:
                         torsion_subgroup = TorsionSubgroup(c, level)
-                        torsion_subgroup.compute_rank(f_pi=-1, use_generators=False)
-                        r = torsion_subgroup.rank
-                        if not ell_t.ordinary:
+                        NP = torsion_subgroup.get_num_points_exact_order()
+                        # NPSS = num_P(level, ell_t.f_pi, f, ell_t.N_pts, self.field.q)
+                        # print(f"NP = {NP}, MAX_N ={MAX_N}, num_P_SS={NPSS}, f_pi={ell_t.f_pi}, f={f}")
 
-                            fx_roots = ell_t.fx_pi.roots()
-                            r_mod_ell_list = []
-                            for root, multiplicity in fx_roots:
-                                r_mod_ell = Zmod(level)(root)
-                                print(root)
-                                r_mod_ell_list.append(r_mod_ell)
-                            print(
-                                f"\n SS CURVE rank = {r} for curve with j={c.j}, t={ell_t.t}, D_K={ell_t.D_K}, f_pi={ell_t.f_pi} is_j0={(c.j).is_zero()}, is_j1728={(c.j-1728).is_zero()}, fx_roots={ell_t.fx_pi.roots()}, r_mod_ell_list={r_mod_ell_list}, q mod level = {self.field.q % level}, Npts={ell_t.N_pts}, Npts mod level = {ell_t.N_pts % level}"
-                            )
-                        if r == 2:
-                            full_r = True
-                        T -= hk * (level**r - 1) / c.aut_size
+                        accum_val = hk * NP / c.aut_size
+                        T -= accum_val
                         NC += 1
                         NSS += 1
-                        vals.append(-hk * (level**r - 1) / c.aut_size)
+                        vals.append(accum_val)
+
+                        '''print(
+                            f"t={ell_t.t}, hk={hk}, NC={1}, NP={NPSS}, contribution to count: {accum_val}"
+                        )'''
 
         # print(f"Computed hecke trace in {time.perf_counter() - _t0:.5f}s")
         return T, NC, NSS, traces, hk_evals, vals, full_r

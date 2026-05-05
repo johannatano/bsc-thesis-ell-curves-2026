@@ -138,8 +138,6 @@ class Curve:
             e = (1, 0)
         else:
             e = (2, 3)
-
-        print(f"\n --------------------------------------------")
         
         coset_reps = [self.field.g**k for k in range(0, self.aut_size)]
         cache_key = (self.p, self.j_invariant_flat)
@@ -147,20 +145,12 @@ class Curve:
         for u in coset_reps:
             A, B = self.ABFromJ(self.j)
             
-            
-            
             cA, cB = u ** e[0] * A, u ** e[1] * B
-            
-            print(f"Trying twist with A={cA}, B={cB} for j={self.j}, t={self.t}")
             
             E = EllipticCurve(self.F, [cA, cB])
             t = E.trace_of_frobenius()
-            
-            print(f"t={self.t} sage t = {t}")
              
             if t == self.t:
-                
-                print(f"Found matching twist for j={self.j}, t={self.t} with A={cA}, B={cB}")
                 if claimed is not None and (cA, cB) in claimed:
                     continue
                 self.A, self.B = cA, cB
@@ -175,7 +165,6 @@ class Curve:
         if self.E is not None:
             return self.E
         A, B = self.getCoefficients()
-        print(f"Initialized curve with j={self.j}, A={A}, B={B}, t={self.t}")
         try:
             self.E = EllipticCurve(self.F, [A, B])
         except Exception as e:

@@ -89,6 +89,14 @@ class TorsionSubgroup:
         else:
             self.rank = self._compute_rank(f_pi)
 
+    def get_num_points_exact_order(self) -> int:
+        pts = [
+            P
+            for P in self.curve.getSageCurve().points()
+            if P.order() == self.l
+        ]
+        return len(pts)
+
     def generate_orbits(self):
         """Enumerate nonzero torsion points from the chosen generators."""
         if self.rank == 2:
@@ -167,9 +175,15 @@ class TorsionSubgroup:
         return 2 if nr_linear_factors > 1 else 1
 
     def _rank_by_enum_points(self) -> int:
+        # TODO: THIS IS NOT RETURNING CORRECT RANK ANYMORE; USED FOR DEBUGGING
         """Fallback rank estimate by explicit enumeration of rational points."""
-        torsion_pts = [P for P in self.curve.getSageCurve().points() if not P.is_zero() and (self.l * P).is_zero()]
-        return 1 if len(torsion_pts) == (self.l-1) else 2  # rough estimate, may overcount if not full rank
+        '''torsion_pts = [P for P in self.curve.getSageCurve().points() if not P.is_zero() and (self.l * P).is_zero()]'''
+        torsion_pts = [
+            P
+            for P in self.curve.getSageCurve().points()
+            if P.order() == self.l
+        ]
+        return 1 if len(torsion_pts) == (self.l-1) else 2
 
     def _two_torsion_rank(self) -> int:
         """Specialized 2-torsion rank test via splitting of the Weierstrass cubic."""
@@ -180,6 +194,9 @@ class TorsionSubgroup:
         return 2 if splits else 1
 
     def _compute_rank(self, f_pi) -> int:
+
+        # return self._rank_by_enum_points()
+
         """Compute the expected torsion rank from the isogeny-class conductor data."""
         if self.curve.is_supersingular:
             return self._rank_by_group_structure()

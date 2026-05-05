@@ -145,29 +145,14 @@ class NumberFieldsClassifier_Fq:
                 continue
 
             HB = math.isqrt(4 * q)
+            
+            print(f"{Colors.HEADER}Generating isogeny classes for F_{q} with Hasse bound {HB}{Colors.ENDC}")
             for t in range(1, HB + 1):
                 if t % self.char == 0:
                     print(f"{Colors.WARNING}Skipping trace t={t} for F_{q} since it is 0 or divisible by char {self.char}{Colors.ENDC}")
                     continue
                 self.nr_fields.create_isogeny_class(t, n)
                 self.nr_fields.create_isogeny_class(-t, n)
-
-            '''max_prime = q + 1 + HB
-            primes = list(primerange(2, min(max_prime + 1, q_max)))
-            #primes = list(primerange(-HB, HB))
-            from tqdm import tqdm
-            for ell in tqdm(primes, desc=f"F_{q} primes", unit="ell", leave=False, ncols=80, ascii=True):
-                i_min = (q + 1 - HB + ell - 1) // ell
-                i_max = (q + 1 + HB) // ell
-                for i in tqdm(range(i_min, i_max + 1), desc=f"ell={ell}", unit="i", leave=False, ncols=80, ascii=True):
-                    t = q + 1 - i*ell
-                    if abs(t) in used_ts:
-                        continue
-                    used_ts.add(abs(t))
-                    #print("adding t", t)
-                    # Again, keep both signed trace classes available in memory.
-                    self.nr_fields.create_isogeny_class(abs(t), n)
-                    self.nr_fields.create_isogeny_class(-abs(t), n)'''
 
         # print(f"{Colors.GREEN}Finished generating isogeny classes for all specified p-powers{Colors.ENDC}")
         self.nr_fields.sort()

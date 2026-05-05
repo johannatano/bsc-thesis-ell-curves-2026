@@ -394,6 +394,7 @@ class IsogenyClass:
         self.t: int = t
         self.q: int = self.Fq.q
         self.N_pts = self.q + 1 - t
+        self.N_t = 0
         # self.N_pts_2 = self.q + 1 + t
         self.n: int = self.Fq.n  # extract n from q = p^n
         self.p: int = self.Fq.p
@@ -428,9 +429,9 @@ class IsogenyClass:
                 for d in sorted(self.f_pi.divisors(), reverse=False):
                     order = self.ensure_order_exists(self.D_K, self.K, d)
                 self.O_K = self.K.maximal_order()
-            #else:
+            # else:
             #    print(f"SS CASE, QUATERNION ALGEBRA BUT FROB IS IN Z")
-            #print(f"t={t} SS orders: D_K={self.D_K}, f_pi={self.f_pi}, D_pi={self.D_pi}, orders: {[order.toJSON() for order in self.orders.values()]}")
+            # print(f"t={t} SS orders: D_K={self.D_K}, f_pi={self.f_pi}, D_pi={self.D_pi}, orders: {[order.toJSON() for order in self.orders.values()]}")
 
         self.generic = True
         self.empty = True
@@ -525,12 +526,15 @@ class IsogenyClass:
 
         if level not in self.curves_by_order:
             self.curves_by_order[level] = []
+
         curr_len = len(self.curves_by_order[level])
         curve.ID = f"f{level}_{curr_len}"
         self.curves_by_order[level].append(curve)
         self.curves[curve.ID] = curve
         self.empty = False
         self.generic = self.generic and (not curve.is_j0) and (not curve.is_j1728)
+
+        self.N_t += 1
 
     def getCurves(self, conductor: Optional[int] = None) -> List:
         if conductor is not None:
