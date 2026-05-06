@@ -68,9 +68,13 @@ def parse_args():
 def enumerate_only(primes, n, use_HCP=False, use_CN=False, q_max=10**20, plist=None, level=None):
     from lib.curves import reset_t0_cache
     cached = []
+
+    print(plist, primes)
     for p in primes:
+
         if plist is not None and p not in plist:
             continue  # Filter to specific primes if plist is provided
+
         reset_t0_cache()
         nf = None
         if use_HCP or use_CN:
@@ -106,10 +110,11 @@ def enumerate_only(primes, n, use_HCP=False, use_CN=False, q_max=10**20, plist=N
 def compute_traces(cached, ell, k, use_CN=False, plist=None):
     ps, Ts, sageTs, diffs, good, infos = [], [], [], [], [], []
 
-    print("COMPUTE TRACES", ell)
     for p, CC in cached:
         if ell > 1 and p % ell == 0:
             continue
+
+        print("COMPUTE TRACES", ell, p)
 
         if plist is not None and p not in plist:
             continue  # Filter to specific primes if plist is provided
@@ -145,7 +150,7 @@ def compute_traces(cached, ell, k, use_CN=False, plist=None):
         infos.append(dict(p=p, q=q, T=T, sage_T=sage_T, diff=diff, NC=NC, NSS=NSS, traces=traces,
                           hk_evals=hk_evals, vals=vals, full_r=full_r,
                           sym=(p % ell == ell - 1)))
-        
+
         print(f"p={p}, q={q}, q equiv ell = {q % ell}, T={T}, sage_T={sage_T}, diff={diff}, NC={NC}, NSS={NSS}, full_r={full_r}")
     return ps, Ts, sageTs, diffs, good, infos
 
@@ -178,7 +183,6 @@ if __name__ == "__main__":
         print(f"Enumerating curves for n={init_n}, {len(primes)} primes up to {args.pmax}...")
     cached_all[init_n] = enumerate_only(primes, init_n, use_HCP=args.use_hcp, use_CN=args.use_cn, plist=args.plist, level=level)
 
-    
     
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 10))
     plt.subplots_adjust(bottom=0.15, hspace=0.3)

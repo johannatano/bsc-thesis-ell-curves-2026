@@ -82,12 +82,13 @@ class TorsionSubgroup:
         """Compute the ℓ-torsion rank, either from generators or valuation data."""
         if self.curve.N_pts % self.l != 0:
             self.rank = 0
-            return
+            return 0
         if use_generators:
             self.gens = self._get_generators()
             self.rank = len(self.gens)
         else:
             self.rank = self._compute_rank(f_pi)
+        return self.rank
 
     def get_num_points_exact_order(self) -> int:
         pts = [

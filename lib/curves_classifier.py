@@ -327,18 +327,20 @@ class CurvesClassifier_Fq:
                     self.field.F(1728), pre_compute_conductor=precompute_conductor
                 )
             else:
+                n = 0
                 for j in tqdm(self.field.F, total=self.field.q, desc=f"F_{self.field.q}", unit="j", ncols=80, ascii=True):
                     self.add_curves_by_j(j, pre_compute_conductor=precompute_conductor)
-
+                    n+=1
+                print(f"{Colors.HEADER}Finished enumerating curves over F_{self.field.q}, total size of catalogue: {self.catalogue.size}{Colors.ENDC}")
         global highest_ell
         # Standard count of isomorphism classes over F_q in characteristic > 3.
         NE = 2*(self.field.q -2) + gcd(4, self.field.q-1) + gcd(6, self.field.q-1)
 
         # print(f"{Colors.HEADER}Finished enumerating curves over F_{self.field.q}, total size of catalogue: {self.catalogue.size}, expected size from formula: {NE}{Colors.ENDC}")
-        # if self.catalogue.size != NE:
-        #    print(f"{Colors.FAIL}Warning: total number of curves in catalogue ({self.catalogue.size}) does not match expected number from formula ({NE}), there may be duplicates or missing curves{Colors.ENDC}")
-        # else:
-        #    print(f"{Colors.GREEN}Successfully enumerated curves, total size of catalogue: {self.catalogue.size}{Colors.ENDC}")
+        if self.catalogue.size != NE:
+            print(f"{Colors.FAIL}Warning: total number of curves in catalogue ({self.catalogue.size}) does not match expected number from formula ({NE}), there may be duplicates or missing curves{Colors.ENDC}")
+        else:
+            print(f"{Colors.GREEN}Successfully enumerated curves, total size of catalogue: {self.catalogue.size}{Colors.ENDC}")
 
         # print(f"Enumeration done in {time.perf_counter() - _t0:.2f}s")
 
@@ -449,6 +451,7 @@ class CurvesClassifier_Fq:
         # more expensive but more detailed enumeration route.
         aut_grp = self._get_aut_group_for_j(j)
         E = GeometricCurve(self.field, j, aut_grp=aut_grp, t=t, f_E=f_E)
+
         ell_t = self.catalogue.get_isogeny_class(E.t)
         # All twists in the family share the same conductor, so compute it once.
         if pre_compute_conductor:
@@ -456,11 +459,18 @@ class CurvesClassifier_Fq:
             E.compute_conductor(ell_t.f_pi, use_true_height=Config.use_true_height)
         twists = E.compute_twists() if compute_twists else [E]
 
+        if E.t == 0:
+            print(f"{Colors.HEADER}Adding curve with j={j}, t=0, aut_size={E.aut_size}, f_E={E.f_E}, number of twists: {len(twists)}{Colors.ENDC}")
+
         '''if E.t == 0:
             print(f"{Colors.HEADER}Adding curve with j={j}, t=0, aut_size={E.aut_size}, f_E={E.f_E}, number of twists: {len(twists)}{Colors.ENDC}")'''
 
         for E_t in twists:
             self.catalogue.add(E_t)
+            if E.t == 0:
+                print(
+                    f"{Colors.HEADER}Added twist with j={E_t.j}, t={E_t.t}, aut_size={E_t.aut_size}, f_E={E_t.f_E}, SS={E_t.is_supersingular}{Colors.ENDC}"
+                )
 
     '''def add_ss_curve_by_j(self, j) -> None:
         """Insert the supersingular twist family attached to `j`."""
@@ -656,12 +666,18 @@ class CurvesClassifier_Fq:
 
                 for f, curves_list in ell_t.curves_by_order.items():
 
-                    '''print(
+                    print(
                         f"{Colors.HEADER}SS CURVES with f={f}{Colors.ENDC}"
-                    )'''
+                    )
                     for c in curves_list:
                         torsion_subgroup = TorsionSubgroup(c, level)
-                        NP = torsion_subgroup.get_num_points_exact_order()
+
+                        NP = 0
+                        r = torsion_subgroup.compute_rank(f_pi=ell_t.f_pi, use_generators=False)
+                        if r is not None:
+                            NP = level**r-1 #torsion_subgroup.get_num_points_exact_order()
+                        else:
+                            print(f"{Colors.FAIL}Failed to compute rank for curve with j={c.j}, t={c.t}, f_E={c.f_E}, f_pi={ell_t.f_pi}, N_pts={ell_t.N_pts}{Colors.ENDC}")
                         # NPSS = num_P(level, ell_t.f_pi, f, ell_t.N_pts, self.field.q)
                         # print(f"NP = {NP}, MAX_N ={MAX_N}, num_P_SS={NPSS}, f_pi={ell_t.f_pi}, f={f}")
 
