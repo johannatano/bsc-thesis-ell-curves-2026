@@ -666,9 +666,7 @@ class CurvesClassifier_Fq:
 
                 for f, curves_list in ell_t.curves_by_order.items():
 
-                    print(
-                        f"{Colors.HEADER}SS CURVES with f={f}{Colors.ENDC}"
-                    )
+                    #print(f"{Colors.HEADER}Processing curves of order f={f} for trace t={ell_t.t}, D_K={ell_t.D_K}, f_pi={ell_t.f_pi}, N_pts={ell_t.N_pts}, len(curves_list)={len(curves_list)}{Colors.ENDC}")
                     for c in curves_list:
                         torsion_subgroup = TorsionSubgroup(c, level)
 

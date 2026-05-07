@@ -202,7 +202,7 @@ if __name__ == "__main__":
                 colors.append("black")
         return colors
 
-    def fmt_info(info, show_sage=False, show_diff=False, ell=None, k=None, n=None):
+    '''def fmt_info(info, show_sage=False, show_diff=False, ell=None, k=None, n=None):
         # Truncate long lists to avoid rendering overflow
         max_display = 10
         vals_fmt = [round(float(v), 3) for v in info["vals"]]
@@ -245,14 +245,16 @@ if __name__ == "__main__":
             )
         if show_diff:
             result += f"\ndiff = {info['diff']}"
-        return result
+        return result'''
 
     ps0, Ts0, sageTs0, diffs0, good0, infos0 = compute_traces(cached_all[init_n], ell_list[init_ell_idx], init_k, args.use_cn, plist=args.plist)
     
     print(f"Trace = {Ts0}")
     
     state = {"ps": ps0, "Ts": Ts0, "sageTs": sageTs0, "diffs": diffs0, "infos": infos0, "good": good0, "log": True, "n": init_n, "plist": args.plist}
-
+    
+    
+    '''
     def draw_ax(ell, k, n, ps, Ts, sageTs, diffs, good, infos):
         # Top plot: Sage computed traces
         ax1.cla()
@@ -330,7 +332,7 @@ if __name__ == "__main__":
         state["ps"], state["Ts"], state["sageTs"], state["diffs"], state["infos"], state["good"], state["n"] = ps, Ts, sageTs, diffs, infos, good, n
         draw_ax(ell, k, n, ps, Ts, sageTs, diffs, good, infos)
         ell_label.set_text(f"ℓ={ell}")
-        fig.canvas.draw_idle()
+        #fig.canvas.draw_idle()
 
     def on_hover(event):
         # Handle hover for both axes
@@ -390,10 +392,10 @@ if __name__ == "__main__":
                 annot1.set_visible(False)
             if annot2:
                 annot2.set_visible(False)
-        fig.canvas.draw_idle()
+        fig.canvas.draw_idle()'''
     
-    fig.canvas.mpl_connect("motion_notify_event", on_hover)
+    '''fig.canvas.mpl_connect("motion_notify_event", on_hover)
     s_ell.on_changed(update)
     s_k.on_changed(update)
     s_n.on_changed(update)
-    plt.show()
+    plt.show()'''
