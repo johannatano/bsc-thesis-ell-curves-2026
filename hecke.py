@@ -26,12 +26,18 @@ def parse_args():
         default="mod_poly",
         help="Method for above-floor rank detection (default: auto — div_poly for ℓ<13, mod_poly otherwise)",
     )
+    p.add_argument(
+        "--compare",
+        action="store_true",
+        default=False,
+        help="Use Sage's built-in Hecke operator for comparison (only for small p and N)",
+    )
     p.add_argument("--true-height", action="store_true", default=False, help="Use exact BFS height in isogeny volcano instead of floor test")
     return p.parse_args()
 
 def run(p: int, l:int, k:int, n:int, use_HCP=False, use_CN=False):
     primes = list(primerange(5, 100)) if p == -1 else [p]
-    #primes = list(primerange(10**6, 10**6+100)) if p == -1 else [p]
+    # primes = list(primerange(10**6, 10**6+100)) if p == -1 else [p]
     # 1000033
     # 10093
     # p=1091
@@ -60,6 +66,7 @@ def run(p: int, l:int, k:int, n:int, use_HCP=False, use_CN=False):
             T, NC, NSS, traces, hk_evals, vals, full_r = CC.compute_hecke(k=args.k, level=ell, use_CN=use_CN)
             trace_val = CuspForms(Gamma1(ell), k + 2).hecke_operator(q).trace()
             diff = T - trace_val
+            print(sorted(traces))
             diffs.setdefault((ell, k, (ell - 1) // 2), []).append(
                 (q, diff, T, trace_val, NC, NSS, vals, traces, hk_evals)
             )

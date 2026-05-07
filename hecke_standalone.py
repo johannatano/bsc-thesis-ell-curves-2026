@@ -1,4 +1,5 @@
 # from sage.all import *
+from sage.all import *
 import random
 from utils.common import Colors
 import argparse
@@ -10,7 +11,7 @@ from fractions import Fraction
 from dataclasses import dataclass, field
 
 from sage.libs.pari import pari
-from sympy import primerange
+from sympy import primerange, factorint
 from tqdm import tqdm
 
 import math
@@ -85,6 +86,8 @@ def euler_phi(n):
     return result
 
 def legendre(a, p):
+    if p == 2:
+        return 0 if a % 2 == 0 else (1 if a % 8 in (1, 7) else -1)
     a = a % p
     if a == 0:
         return 0
@@ -103,6 +106,9 @@ def valuation(n, l):
 def fmt_factored(n):
     if n == 0:
         return "0"
+    
+    if n > 10**6:
+        return str("")
     factors = factorize(abs(n))
     if not factors:
         return str(n)
@@ -110,6 +116,7 @@ def fmt_factored(n):
     return f"-{s}" if n < 0 else s
 
 def factorize(n):
+    #return list(factorint(n).items())  # → [(2, 2), (3, 1)]
     """Return list of (prime, exponent) pairs for n > 1."""
     factors = []
     d = 2
@@ -153,7 +160,7 @@ def quaternion_class_number(p, rescale_weights=False):
         return Fraction(int(p + 6 - 4 * chi3 - 3 * chi4), 12)
 
     # we weigh the j=0 curves by 1/3 and the j=1728 curves by 1/2, then we apply 1/2 for all auts, this end up in this simplified form
-    return Fraction(int(p - 1), 12)
+    return Fraction(p - 1, 12)
     # return Fraction(int(n_generic)) + Fraction(int(n_j0), 3) + Fraction(int(n_j1728), 2)
 
 def cusp_term(p, n, N, k):
@@ -191,7 +198,7 @@ class QFOrder:
     h_ord: int #class nr for this order
     inv: Tuple[int, int] # all curves in this order have same invariants
 
-class QuadraticField:
+class JTQuadraticField:
     def __init__(self, D: int) -> None:
         self.D_K = self._fundamental_discr(D)
         '''if self.D_K in CACHED_DK:
@@ -204,7 +211,6 @@ class QuadraticField:
             # TODO: replace with db lookup, using pari for now
             self.h_OK = -1 if self.D_K == 0 else int(pari(self.D_K).qfbclassno())
             CACHED_DK[self.D_K] = self.h_OK'''
-        self.h_OK = -1 if self.D_K == 0 else int(pari(self.D_K).qfbclassno())
 
         # Unit index [O_K^x : O_f^x]
         if self.D_K == -3:
@@ -213,6 +219,17 @@ class QuadraticField:
             self.w = 2
         else:
             self.w = 1
+
+        # SAGE DEBUG
+        if self.D_K != 0:
+            #self.K = QuadraticField(self.D_K)
+            #int(self.K.class_number())  #
+            self.h_OK = int(pari(self.D_K).qfbclassno())
+        else:
+            self.h_OK = 0
+
+        self.is_gaussian = self.D_K == -4
+        self.is_eisentein = self.D_K == -3
 
     def _fundamental_discr(self, D:int) -> int:
         """Return the fundamental discriminant Δ """
@@ -240,8 +257,10 @@ class QuadraticField:
         # f = math.isqrt(abs(D // delta))
         return int(delta)#, f
 
-    def h(self, f:int) -> int:
+    def h(self, f:int, q:int) -> int:
         """
+        Cox primes, Thm 7.24
+        
         Class number of the order of conductor f in the imaginary quadratic field
         with fundamental discriminant D_K.
         Matches Sage's K.order_of_conductor(f).class_number().
@@ -251,21 +270,36 @@ class QuadraticField:
         if f == 1:
             return self.h_OK
         # Product over distinct primes dividing f
-        result = f * self.h_OK
+        result = Fraction(f * self.h_OK, self.w)
+
         for p, _ in factorize(f):
-            result = result * (p - legendre(self.D_K, p)) // p
-        return int(result // self.w)
+            result *= Fraction(p - legendre(self.D_K, p), p)
+
+        if result.denominator != 1:
+            print(
+                f"{Colors.FAIL}Warning: non-integer class number for D_K={self.D_K}, f={f}, h_OK={self.h_OK}, w={self.w}, intermediate result={result}{Colors.ENDC}"
+            )
+        '''if self.K is not None:
+            order_sage = self.K.order_of_conductor(f)
+            h_O = order_sage.class_number()
+            js = self.j_invariants(f, GF(q))
+            if int(result) != int(h_O):
+                print(
+                    f"{Colors.FAIL}Discrepancy in class number for D_K={self.D_K}, f={f}: computed {legendre(self.D_K, p)} vs Sage's {h_O}, legendre(self.D_K, p) / p={(p - (legendre(self.D_K, p))) / p}{Colors.ENDC}"
+                )'''
+        # return int(h_O)
+        return int(result)
 
     def j_invariants(self, f:int, F) -> List:
         j_invs = []
-        '''try:
+        try:
             H = hilbert_class_polynomial(self.D_K*f**2)
             H_fq = H.change_ring(F)
             for j, m in H_fq.roots(multiplicities=True):
                 for _ in range(m):
                     j_invs.append(j)
         except Exception as e:
-            print(f"Warning: Could not compute HCP for D={self.D_K*f**2}, probably because sage is not loaded: {e}")'''
+            print(f"Warning: Could not compute HCP for D={self.D_K*f**2}, probably because sage is not loaded: {e}")
         return j_invs
 
 @dataclass
@@ -305,7 +339,6 @@ def num_P(level, f_pi, f, N_pts, q):
     if level == 1:
         return 1
     result = 1
-
     for l, a in LEVEL_FACTORS:
         h = max(0, valuation(f_pi, l) - valuation(f, l)) if f_pi * f > 0 else None
         v_q1 = valuation(q - 1, l)
@@ -316,58 +349,81 @@ def num_P(level, f_pi, f, N_pts, q):
         s2 = min(a, e2)
         # exact-order-l^a count in Z/l^s1 x Z/l^s2
         result *= l ** (s1 + s2) - l ** (min(a - 1, s1) + min(a - 1, s2))
-    return int(result)
+    return result
 
 def process_t(p, n, t, N, k):
     q = p**n
     N_pts = q + 1 - t
     # safe to early exit, note: for N not prime, we might still return NP = 0 below, so passing this is NOT equivalent to having at least one point of order N
+
     if N_pts % N != 0:
         return LevelStructureResult(t=t)
+
     D_pi = t**2 - 4*q
-    QF = QuadraticField(D_pi)
-    D_K = QF.D_K
+    qf = JTQuadraticField(D_pi)
+
+    D_K = qf.D_K
     f_pi = math.isqrt(abs(D_pi // D_K)) if D_K != 0 else 0
     curves_contrib = Fraction(0)
     NSS = Fraction(0)
     NC = Fraction(0)
     NP = 0
+
     if D_K != 0: # Imaginary Quadratic Case
         is_SS = t % p == 0
         for f in divisors(f_pi):
             # NON ALLOWED CONDUCTORS
             if is_SS and f % p == 0:
                 continue
+
+            # js = qf.j_invariants(f, GF(q))
+            # print(f"t={t}, f={f}, D_K={D_K}, f_pi={f_pi}, N_pts={N_pts}, j_invariants={js}")
             NP_ord = num_P(N, f_pi, f, N_pts, q)
             if NP_ord > 0:
-                NC_ord = QF.h(f)
+                NC_ord = qf.h(f, q)
                 NSS += NC_ord if is_SS else 0
-                aut_size = (
-                    (AUT_SIZE[D_K] // (2 if is_SS else 1))
-                    if f == 1 and D_K in (-4, -3)
-                    else 2
+
+                """
+                (2 if is_SS else 1)
+                Schoof Thm 4.6
+                
+                we do NOT weigh the class numbers by mass (ie Huruwitz) we instead compensate for the aut weight here, we also compensat for the extra inert factor f*h(O) as described in Schoof, which is precicely 2 iff (-3/p)=-1 or (-4/p)=-1 which occurs iff j0 or j1728 is SS, hence we have inert factor 2 iff is_gaussian or is_eisen and is_SS
+                see: Schoof Thm 4.5 and 4.6
+                
+                """
+                aut_size = (AUT_SIZE[D_K] // (2 if is_SS else 1)) if ((qf.is_gaussian or qf.is_eisentein) and f == 1) else 2
+
+                curves_contrib += (
+                    Hk.eval(q, t, k)
+                    * NC_ord
+                    * NP_ord
+                    * Fraction(1, aut_size)
                 )
-                curves_contrib += Fraction(NP_ord * NC_ord, aut_size)
                 NP += NP_ord
-                NC += NC_ord
+                NC += NC_ord 
 
     else: # Quaterion Case
         NP = num_P(N, f_pi, -1, N_pts, q) # set to -1 so we do NOT look at conductors, only weil pairing and valuation of N_pts
         NC = Fraction(p - 1, 12) #quaternion_class_number(p, rescale_weights=True)
         NSS = NC
         # we have already weighted the special js with 1/3 and 1/2 in this count, since it might be a mix of generic and special
-        curves_contrib = Fraction(NP * NC, 2)
+        curves_contrib = (
+            Hk.eval(q, t, k)
+            * NC
+            * NP
+            * Fraction(1, 2)
+        )
 
     return LevelStructureResult(
         t=t,
         has_full=False,
-        val=curves_contrib * Hk.eval(q, t, k),
+        val=curves_contrib,
         NSS=NSS,
         NC=NC,
         NP=NP,
-        valid=True
+        valid=True,
     )
-
+# q=31: diff=4, T=-104, sage_trace=-108, NC=13, NSS=13,  [q≡1 mod ell] [q≡1 mod 5]
 
 def run(p, n, N, k, compare=False, filter_q_level=False):
     q = p**n
@@ -396,26 +452,41 @@ def run(p, n, N, k, compare=False, filter_q_level=False):
     i_min = (q + 1 - HB + N - 1) // N
     i_max = (q + 1 + HB) // N
 
-    ts_ = []
+    #ts_ = []
 
-    if filter_q_level:
+    if False:
         for i in range(i_min, i_max + 1):
             t = q + 1 - i*N
             # print(f"Processing trace t={t} for F_{q} with Hasse bound {HB}")
             if t % p == 0:
                 continue
-            #ts_.append(t)
+            # ts_.append(t)
             partial_results.append(process_t(p, n, t, N, k))
     else:
         for t in range(1, HB + 1):
-
             # print(f"Processing trace t={t} for F_{q} with Hasse bound {HB}")
-
             if t % p == 0:
                 continue
             # N(t) = H(t^2-4q), t^2 < HB, p nmid t, Schoof
             partial_results.append(process_t(p, n, t, N, k))
             partial_results.append(process_t(p, n, -t, N, k))
+
+    #ts_ = [r.t for r in partial_results if r.valid]
+    '''
+    0 7
+    6 7
+    25 7
+    3 2
+    5 2
+    9 2
+    14 2
+    8 -3
+    27 -3
+    11 -8
+    17 -8
+    13 -8
+    19 -8
+    '''
 
     '''ts_2 = [r.t for r in partial_results if r.valid]
     if len(ts_) != len(ts_2) or set(ts_) != set(ts_2):
@@ -464,18 +535,26 @@ def run(p, n, N, k, compare=False, filter_q_level=False):
         partial_results.append(process_t(p, n, -HB, N, k))
 
     # SUM TOTAL FROM PARTIALS
-    NSS = sum((r.NSS) for r in partial_results)
+    NSS = int(0)
+    for r in partial_results:
+        NSS += r.NSS
     NSS = int(NSS)
 
-    S_Gamma_Y = sum((r.val) for r in partial_results)
+    S_Gamma_Y = Fraction(0)
+    for r in partial_results:
+        S_Gamma_Y += r.val
     if S_Gamma_Y.denominator != 1:
         print(f"{Colors.FAIL}Total S_Gamma_Y is not an integer: {S_Gamma_Y}{Colors.ENDC}")
 
     S_Gamma_Y = int(S_Gamma_Y)
 
-    NC = sum(float(r.NC) for r in partial_results)
+    NC = 0
+    for r in partial_results:
+        NC += float(r.NC)
     NC = int(NC)
-    NP = sum((r.NP) for r in partial_results)
+    NP = 0
+    for r in partial_results:
+        NP += r.NP
     NP = int(NP)
 
     cform = CuspForms(Gamma1(N), k + 2) if compare else None
@@ -486,6 +565,9 @@ def run(p, n, N, k, compare=False, filter_q_level=False):
     # eis_H,k(q) = - SUM a_1(E)^(k-2)/#AutE - Tr(F_q | S([H,k+2]))
     # eis_H,k(q) = - S_Gamma_Y - Tr_Tq
     # this is the expected eis_H_k, we compute it now to be able to find a formula to compute this, and therefore compute Tr
+    
+    #S_Gamma_Y = 501120
+    
     eis_H_k = - S_Gamma_Y - Tr_Tq
 
     phi_N = euler_phi(N)
@@ -495,10 +577,11 @@ def run(p, n, N, k, compare=False, filter_q_level=False):
     # TODO: make it work for N < 5
     cusp_gamma1_1 = cusp_term(p, n, N, k+2)
     # if N == 2:
-    #    cusp_gamma1_1 = (1 + sgn_k)
+    # cusp_gamma1_1 = (phi_N // 2) * (1 + sgn_k)
     # if N == 4:
     #    cusp_gamma1_1 = (3 / 2) * (1 + sgn_k)
 
+    
     return HeckeResult(
         p=p,
         n=n,
@@ -544,13 +627,19 @@ def print_result(result: HeckeResult):
 if __name__ == "__main__":
     args = parse_args()
 
+    '''if args.compare:
+        try:
+            from sage.all import *
+        except ImportError:
+            print(f"{Colors.FAIL}Error: Sage is required for --compare option{Colors.ENDC}")
+            exit(1)'''
     start_t = time.time()
-
+    
     for l, a in factorize(args.N):
         LEVEL_FACTORS.append((l, a))
 
     results = []
-    
+
     # no fixed prime, we loop over a range or select random in range
     if args.p == -1:
         primes = [p for p in primerange(args.pmin, args.pmax+1)]
@@ -559,7 +648,7 @@ if __name__ == "__main__":
             results.append( run(primes[rnd_idx], args.n, args.N, args.k, args.compare, args.filter))
         else:
             for _p in tqdm(primes, desc="processing primes", unit="ic", ncols=80, ascii=True):
-            #for _p in primes:
+                # for _p in primes:
                 # print(f"\n{'='*40}\nRunning for p={_p}, n={args.n}, N={args.N}, k={args.k}\n{'='*40}")
                 result = run(_p, args.n, args.N, args.k, args.compare, args.filter)
                 results.append(result)
@@ -577,7 +666,8 @@ if __name__ == "__main__":
     )
 
     print_result(results)
-
+    # 295175736
+    # T=-295175736
     '''M = ModularForms(Gamma1(args.N), args.k + 2)
     E = M.eisenstein_subspace()
     # EISEN IS ALWAYS #CUSPS
@@ -588,8 +678,8 @@ if __name__ == "__main__":
     S_old = S.old_submodule()
     S_new = S.new_submodule()
     dim_S_old = S_old.dimension()
-    dim_S_new = S_new.dimension()'''
-    # print(f"Dimension of M_{args.k+2}(Gamma1({args.N})): {dim_M} (Eisenstein: {dim_E}, Cusp: {dim_S}, Old: {dim_S_old}, New: {dim_S_new})\n")
+    dim_S_new = S_new.dimension()
+    print(f"Dimension of M_{args.k+2}(Gamma1({args.N})): {dim_M} (Eisenstein: {dim_E}, Cusp: {dim_S}, Old: {dim_S_old}, New: {dim_S_new})\n")'''
 
     # from brute force
     # p=11, q=1331, q equiv ell = 5, T=195936, sage_T=227874, diff=-31938, NC=221, NSS=221, full_r=False

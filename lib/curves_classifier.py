@@ -457,6 +457,7 @@ class CurvesClassifier_Fq:
         if pre_compute_conductor:
             from utils.common import Config
             E.compute_conductor(ell_t.f_pi, use_true_height=Config.use_true_height)
+            
         twists = E.compute_twists() if compute_twists else [E]
 
         if E.t == 0:
@@ -666,8 +667,10 @@ class CurvesClassifier_Fq:
 
                 for f, curves_list in ell_t.curves_by_order.items():
 
-                    #print(f"{Colors.HEADER}Processing curves of order f={f} for trace t={ell_t.t}, D_K={ell_t.D_K}, f_pi={ell_t.f_pi}, N_pts={ell_t.N_pts}, len(curves_list)={len(curves_list)}{Colors.ENDC}")
+                    #print(f"nc = {len(curves_list)}, D_K={ell_t.D_K}, f_pi={ell_t.f_pi}, f={f}, t={ell_t.t}")
+                    # print(f"{Colors.HEADER}Processing curves of order f={f} for trace t={ell_t.t}, D_K={ell_t.D_K}, f_pi={ell_t.f_pi}, N_pts={ell_t.N_pts}, len(curves_list)={len(curves_list)}{Colors.ENDC}")
                     for c in curves_list:
+
                         torsion_subgroup = TorsionSubgroup(c, level)
 
                         NP = 0
@@ -682,7 +685,7 @@ class CurvesClassifier_Fq:
                         accum_val = hk * NP / c.aut_size
                         T -= accum_val
                         NC += 1
-                        NSS += 1
+                        NSS += 1 if not ell_t.ordinary else 0
                         vals.append(accum_val)
 
                         '''print(
