@@ -523,7 +523,7 @@ class IsogenyClass:
     def add_curve(self, curve) -> None:
         """Insert a curve into the class, grouped by endomorphism conductor."""
         level = curve.f_E if curve.f_E is not None else -1
-
+        
         if level not in self.curves_by_order:
             self.curves_by_order[level] = []
 

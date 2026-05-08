@@ -61,25 +61,25 @@ class Data:
         try:
             os.makedirs(os.path.dirname(out_path), exist_ok=True)
             with open(out_path + fileName, "w") as f:
-                
+
                 if readable:
                     json_str = json.dumps(data, indent=2)
                     import re
                     json_str = re.sub(r'\[\s+(\d+)\s+\]', r'[\1]', json_str)
-                    # Keep simple two-element arrays on one line  
+                    # Keep simple two-element arrays on one line
                     json_str = re.sub(r'\[\s+(\d+),\s+(\d+)\s+\]', r'[\1, \2]', json_str)
                     f.write(json_str)
                 # Format JSON more compactly while keeping it readable
-                #json_str = json.dumps(data, indent=2)
+                # json_str = json.dumps(data, indent=2)
                 else:
-                    
+
                     json.dump(data, f, separators=(",", ":"))
                 # Keep simple single-element arrays on one line
-                #import re
-                #json_str = re.sub(r'\[\s+(\d+)\s+\]', r'[\1]', json_str)
-                # Keep simple two-element arrays on one line  
-                #json_str = re.sub(r'\[\s+(\d+),\s+(\d+)\s+\]', r'[\1, \2]', json_str)
-                #f.write(json_str)
+                # import re
+                # json_str = re.sub(r'\[\s+(\d+)\s+\]', r'[\1]', json_str)
+                # Keep simple two-element arrays on one line
+                # json_str = re.sub(r'\[\s+(\d+),\s+(\d+)\s+\]', r'[\1, \2]', json_str)
+                # f.write(json_str)
         except Exception as e:
             Logger.cprint(f"Failed to save JSON to {path}: {e}", Colors.FAIL)
 
@@ -96,18 +96,43 @@ class Data:
 
 
 class Colors:
-    HEADER = '\033[95m'
-    BLUE = '\033[94m'
-    GREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
+    # Bright colors
+    HEADER = "\033[95m"
+    BRIGHT_MAGENTA = "\033[95m"
+    BRIGHT_CYAN = "\033[96m"
+    BRIGHT_BLUE = "\033[94m"
+    BRIGHT_GREEN = "\033[92m"
+    BRIGHT_YELLOW = "\033[93m"
+    BRIGHT_RED = "\033[91m"
+    BRIGHT_WHITE = "\033[97m"
+
+    # Standard colors
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    BLUE = "\033[34m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+    TURQUOISE = "\033[36m"  # Cyan/Turquoise
+    WHITE = "\033[37m"
+
+    # Named aliases
+    WARNING = "\033[93m"
+    FAIL = "\033[91m"
+    SUCCESS = "\033[92m"
+    INFO = "\033[94m"
+
+    # Styles
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    ITALIC = "\033[3m"
+    UNDERLINE = "\033[4m"
+
+    # Reset
+    ENDC = "\033[0m"
+
 
 class Config:
     """Global runtime configuration, set once from CLI args."""
     rank_method: str = "mod_poly"  # "auto" | "div_poly" | "mod_poly" | "invariants"
     use_true_height: bool = False
-
-
-

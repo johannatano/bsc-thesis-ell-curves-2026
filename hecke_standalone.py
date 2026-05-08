@@ -22,6 +22,7 @@ PRECOMPUTE_INVARIANTS = False
 LEVEL_FACTORS = []
 AUT_SIZE = {-4: 4, -3: 6}
 FILTER_Q_ON_LEVEL = True
+A1q: dict = {}
 
 def parse_args():
     p = argparse.ArgumentParser(description="Classify curves over F_q.")
@@ -53,7 +54,7 @@ def parse_args():
         default=False,
         help="Use Sage's built-in Hecke operator for comparison (only for small p and N)",
     )
-    
+
     p.add_argument(
         "--random",
         action="store_true",
@@ -67,7 +68,7 @@ def parse_args():
         default=False,
         help="When enumerating traces in HB, only process those that can have level structure",
     )
-        
+
     p.add_argument(
         "--plist",
         type=int,
@@ -79,6 +80,182 @@ def parse_args():
 
 
 # GEENRIC HELPERS
+# ---------------------------------------------------------------------------
+# count_A1q(p, r)
+# For q = p^r, iterates over all possible Frobenius traces a with |a| <= 2*sqrt(q).
+# For each isogeny class (determined by trace a), computes the weighted count of
+# elliptic curves over F_q in that class, where each curve is weighted by 1/|Aut_k(E)|.
+# Stores the result table in A1q[q] = {a: weighted_count}.
+# The grand total sum_{a} (weighted count) should equal q.
+#
+# The 9 cases arise from Honda-Tate theory for abelian varieties over finite fields:
+#   Case 1: gcd(a, p) = 1         — ordinary curves, generic case
+#   Case 2: a=0, r odd            — supersingular, all curves have the same endomorphism algebra
+#   Case 3: a^2=2q, p=2, r odd   — special supersingular for p=2
+#   Case 4: a^2=3q, p=3, r odd   — special supersingular for p=3
+#   Case 5: a=2√q, p=2, r even   — purely inseparable Frobenius
+#   Case 6: a=2√q, p=3, r even   — purely inseparable Frobenius
+#   Case 7: a=2√q, general r even — Frobenius = scalar; requires correction for j=0 and j=1728
+#   Case 8: a^2=q, r even         — Frobenius has order 2 over F_{p^{r/2}}
+#   Case 9: a=0, r even           — purely imaginary Frobenius
+# ---------------------------------------------------------------------------
+def count_A1q(p: int, r: int):
+    q = p**r
+    if q >= 10**7 / 4:
+        print("q too large")
+        return -1
+
+    Res: dict = {}
+    amax = floor(2 * sqrt(q))
+    total = Fraction(0)
+
+    for a in range(0, amax + 1):
+
+        if a % p != 0:
+            # Case 1: ordinary — use Hurwitz-Kronecker class number for discriminant a^2-4q
+            dscr = a**2 - 4 * q
+            res = HKclass(dscr)
+
+        elif a == 0 and r % 2 == 1:
+            # Case 2: supersingular at a=0, odd extension degree
+            dscr = -4 * p
+            res = HKclass(dscr)
+
+        elif a**2 == 2 * q and p == 2 and r % 2 == 1:
+            # Case 3: p=2, r odd, a=sqrt(2q) — 4 automorphisms
+            res = Fraction(1, 4)
+
+        elif a**2 == 3 * q and p == 3 and r % 2 == 1:
+            # Case 4: p=3, r odd, a=sqrt(3q) — 6 automorphisms
+            res = Fraction(1, 6)
+
+        elif a**2 == 4 * q and r % 2 == 0 and p == 2:
+            # Case 5: p=2, r even, a=2sqrt(q)
+            res = Fraction(1, 24)
+
+        elif a**2 == 4 * q and r % 2 == 0 and p == 3:
+            # Case 6: p=3, r even, a=2sqrt(q)
+            res = Fraction(1, 12)
+
+        elif a**2 == 4 * q and r % 2 == 0:
+            # Case 7: general p, r even, a=2sqrt(q)
+            # Base count from a formula involving p and Legendre symbols at -3 and -4
+            res = Fraction(
+                p + 6 - 4 * legendre_symbol(-3, p) - 3 * legendre_symbol(-4, p), 24
+            )
+            # Corrections for the j=0 (CM by Z[ω], extra 6 auts) and j=1728 (CM by Z[i], extra 4 auts) curves
+            if p % 3 != 1:  # p is inert or ramified at 3 → j=0 curve appears here
+                res += Fraction(-1, 2) + Fraction(1, 6)
+            if p % 4 != 1:  # p is inert or ramified at 2 → j=1728 curve appears here
+                res += Fraction(-1, 2) + Fraction(1, 4)
+
+        elif a**2 == q and r % 2 == 0:
+            # Case 8: a=sqrt(q), r even — involves only -3 Legendre symbol
+            res = Fraction(1 - legendre_symbol(-3, p), 6)
+
+        elif a == 0 and r % 2 == 0:
+            # Case 9: a=0, r even — involves only -4 Legendre symbol
+            res = Fraction(1 - legendre_symbol(-4, p), 4)
+
+        else:
+            res = Fraction(0)  # empty isogeny class
+
+        Res[a] = res
+        Res[-a] = (
+            res  # trace a and -a give isomorphic (dual) isogeny classes with same count
+        )
+
+        # Count a=0 once, all other ±a pairs count twice
+        total += res if a == 0 else 2 * res
+
+
+    if total != q:
+        print(f"\n{Colors.FAIL}Mistake! Total does not equal q.{Colors.ENDC}")
+    else:
+        print(f"\n{Colors.GREEN}Success! Total A1q equals q as expected.{Colors.ENDC}")
+        
+    A1q[q] = Res
+
+    return total
+
+
+# ---------------------------------------------------------------------------
+# HKclass(dscr)
+# Computes the Hurwitz-Kronecker class number H(dscr).
+# Uses the convention that weights each class by 1/|Aut|, so H(-3)=1/3, H(-4)=1/2.
+# Requires dscr < 0 and dscr ≡ 0 or 1 (mod 4).
+# ---------------------------------------------------------------------------
+
+LstClnmb: dict  # e.g. {-3: Fraction(1,1), -4: Fraction(1,1), -7: Fraction(1,1), ...}
+
+def HKclass(dscr) -> Fraction:
+    
+    
+    #if dscr >= 0 or (dscr % 4 != 0 and dscr % 4 != 1):
+    #    print(f"{Colors.FAIL}Invalid discriminant {dscr} for HKclass, must be negative and ≡ 0 or 1 mod 4{Colors.ENDC}")
+    #    return 0
+    
+    # Factor |dscr| into a list of (prime, exponent) pairs
+    fac_dscr = list(factorint(abs(dscr)).items())  # [(p1, e1), (p2, e2), ...]
+
+    # Write dscr = cnd^2 * fund_dscr where fund_dscr is a fundamental discriminant.
+    # For each prime factor p^e of dscr:
+    #   - if e is even:  p^(e/2) goes entirely into cnd
+    #   - if e is odd:   p^((e-1)/2) goes into cnd, and p goes into fund_dscr
+    cnd = 1
+    fund_dscr = -1  # will accumulate the odd-exponent primes
+    for prime, exp in fac_dscr:
+        if exp % 2 == 0:
+            cnd *= prime ** (exp // 2)
+        else:
+            cnd *= prime ** ((exp - 1) // 2)
+            fund_dscr *= prime
+
+    # Adjust so that fund_dscr is a true fundamental discriminant (≡ 0 or 1 mod 4).
+    # If fund_dscr ≡ 2 or 3 (mod 4), we need to absorb an extra factor of 4.
+    if fund_dscr % 4 == 2 or fund_dscr % 4 == 3:
+        fund_dscr *= 4
+        cnd //= 2  # compensate: (2*cnd')^2 * fund_dscr' = cnd^2 * (4*fund_dscr'), so cnd' = cnd/2
+
+    # H(dscr) = sum_{d | cnd} h(fund_dscr) * d * prod_{p | d} (1 - (fund_dscr/p)/p)
+    # where (fund_dscr/p) is the Legendre symbol and h is the class number of fund_dscr.
+    res = Fraction(0)
+
+    for d in divisors(cnd):
+
+        clnmb = Fraction(int(pari(fund_dscr).qfbclassno()) * d)
+        fac_d = list(factorint(d).items())  # prime factors of this divisor d
+
+        start_idx = 0  # index into fac_d; may skip p=2 (handled specially below)
+
+        if len(fac_d) > 0:
+            if fac_d[0][0] == 2:
+                # Special Euler factor at p=2 depends on fund_dscr mod 8
+                start_idx = 1
+                if fund_dscr % 8 == 1:
+                    clnmb *= Fraction(1, 2)  # (1 - 1/2)
+                elif fund_dscr % 8 == 5:
+                    clnmb *= Fraction(3, 2)  # (1 + 1/2)
+                # if fund_dscr % 8 == 4 or 0: no factor (ramified at 2, contributes 1)
+
+            # Euler factors at odd primes: multiply by (1 - (fund_dscr/p)/p)
+            for prime, _ in fac_d[start_idx:]:
+                clnmb *= 1 - Fraction(legendre_symbol(fund_dscr, prime), prime)
+
+        res += clnmb
+
+    # Divide by the number of automorphisms of the fundamental order:
+    # |Aut(O_{fund_dscr})| = 6 if D=-3, 4 if D=-4, 2 otherwise.
+    if fund_dscr == -3:
+        res /= 6
+    elif fund_dscr == -4:
+        res /= 4
+    else:
+        res /= 2
+
+    return res
+
+
 def euler_phi(n):
     result = n
     for p, _ in factorize(n):
@@ -106,8 +283,7 @@ def valuation(n, l):
 def fmt_factored(n):
     if n == 0:
         return "0"
-    
-    if n > 10**6:
+    if n > 10**20:
         return str("")
     factors = factorize(abs(n))
     if not factors:
@@ -173,13 +349,14 @@ def cusp_term(p, n, N, k):
         Nd = N // d
         # split cusps: need (N/d) | (q-1)
         if (q - 1) % Nd == 0:
-            split += euler_phi(d) * euler_phi(Nd) // 2
+            split += euler_phi(d) * euler_phi(Nd)
         # non-split cusps: need d | 2 AND (N/d) | (q+1)
         if d in (1, 2) and (q + 1) % Nd == 0:
-            non_split += euler_phi(d) * euler_phi(Nd) // 2
+            non_split += euler_phi(d) * euler_phi(Nd)
 
+    #print(f"cusp_term: p={p}, n={n}, N={N}, k={k}, split={split}, non_split={non_split}")
     # Each cusp contributes a_1^k where a_1 = +1 (split) or -1 (non-split)
-    return split * 1 + non_split * ((-1) ** k)
+    return (split * 1 + non_split * ((-1) ** k)) // 2
 
 # HELPER CLASS TO EVALUATE Hk
 class Hk:
@@ -199,40 +376,35 @@ class QFOrder:
     inv: Tuple[int, int] # all curves in this order have same invariants
 
 class JTQuadraticField:
-    def __init__(self, D: int) -> None:
-        self.D_K = self._fundamental_discr(D)
-        '''if self.D_K in CACHED_DK:
-            clr = Colors.WARNING# if CACHED_DK[self.D_K][2] == p else Colors.FAIL
-            print(
-                f"{clr}Warning: D_K={self.D_K} already processed, skipping redundant class number computation{Colors.ENDC}"
-            )
-            self.h_OK = CACHED_DK[self.D_K]
-        else:
-            # TODO: replace with db lookup, using pari for now
-            self.h_OK = -1 if self.D_K == 0 else int(pari(self.D_K).qfbclassno())
-            CACHED_DK[self.D_K] = self.h_OK'''
+    @staticmethod
+    def H(D: int) -> int:
+        """
+        Kronecker class number H(Δ) as defined in Schoof (1987), Prop 2.2.
+        Returns the cardinality of SL2(Z)-orbits of positive definite 
+        binary quadratic forms of discriminant D.
+        """
+        if D >= 0:
+            return 0
 
-        # Unit index [O_K^x : O_f^x]
-        if self.D_K == -3:
-            self.w = 3
-        elif self.D_K == -4:
-            self.w = 2
-        else:
-            self.w = 1
+        abs_D = abs(D)
+        total_H = 0
 
-        # SAGE DEBUG
-        if self.D_K != 0:
-            #self.K = QuadraticField(self.D_K)
-            #int(self.K.class_number())  #
-            self.h_OK = int(pari(self.D_K).qfbclassno())
-        else:
-            self.h_OK = 0
+        # Iterating through d where d^2 divides D (Schoof Prop 2.2)
+        # Schoof counts orbits, not weighted values.
+        for d in range(1, int(math.isqrt(abs_D)) + 1):
+            if abs_D % (d**2) == 0:
+                delta_prime = D // (d**2)
 
-        self.is_gaussian = self.D_K == -4
-        self.is_eisentein = self.D_K == -3
+                # The discriminant of the order must be ≡ 0 or 1 (mod 4)
+                if delta_prime % 4 == 0 or delta_prime % 4 == 1:
+                    # qfbclassno(Δ) returns the primitive class number h(Δ)
 
-    def _fundamental_discr(self, D:int) -> int:
-        """Return the fundamental discriminant Δ """
+                    total_H += int(pari(delta_prime).qfbclassno())
+
+        return total_H
+
+    def D0(D: int) -> int:
+        """Return the fundamental discriminant Δ"""
         if D == 0:
             return 0
         sign = -1 if D < 0 else 1
@@ -255,7 +427,39 @@ class JTQuadraticField:
         # Fundamental discriminant: sf if sf ≡ 1 mod 4, else 4·sf
         delta = sf if sf % 4 == 1 else 4 * sf
         # f = math.isqrt(abs(D // delta))
-        return int(delta)#, f
+        return int(delta)  # , f
+
+    def __init__(self, D: int) -> None:
+        self.D_K = JTQuadraticField.D0(D)
+        '''if self.D_K in CACHED_DK:
+            clr = Colors.WARNING# if CACHED_DK[self.D_K][2] == p else Colors.FAIL
+            print(
+                f"{clr}Warning: D_K={self.D_K} already processed, skipping redundant class number computation{Colors.ENDC}"
+            )
+            self.h_OK = CACHED_DK[self.D_K]
+        else:
+            # TODO: replace with db lookup, using pari for now
+            self.h_OK = -1 if self.D_K == 0 else int(pari(self.D_K).qfbclassno())
+            CACHED_DK[self.D_K] = self.h_OK'''
+
+        # Unit index [O_K^x : O_f^x]
+        if self.D_K == -3:
+            self.w = 3
+        elif self.D_K == -4:
+            self.w = 2
+        else:
+            self.w = 1
+
+        # SAGE DEBUG
+        if self.D_K != 0:
+            # self.K = QuadraticField(self.D_K)
+            # int(self.K.class_number())  #
+            self.h_OK = int(pari(self.D_K).qfbclassno())
+        else:
+            self.h_OK = 0
+
+        self.is_gaussian = self.D_K == -4
+        self.is_eisentein = self.D_K == -3
 
     def h(self, f:int, q:int) -> int:
         """
@@ -310,6 +514,8 @@ class LevelStructureResult:
     NSS: Fraction = field(default_factory=Fraction)
     NC: Fraction = field(default_factory=Fraction)
     NP: int = 0
+    N_gauss: int = 0
+    N_eisen: int = 0
     valid: bool = False
 
 @dataclass
@@ -332,6 +538,8 @@ class HeckeResult:
     NSS: int  # number of supersingular curves encountered (for debugging)
     NC: int
     NP: int
+    N_gauss: int
+    N_eisen: int
     j0_SS: bool  # whether j0 is supersingular (for debugging)
     j1728_SS: bool  # whether j1728 is supersingular (for debugging)
 
@@ -356,8 +564,8 @@ def process_t(p, n, t, N, k):
     N_pts = q + 1 - t
     # safe to early exit, note: for N not prime, we might still return NP = 0 below, so passing this is NOT equivalent to having at least one point of order N
 
-    if N_pts % N != 0:
-        return LevelStructureResult(t=t)
+    # if N_pts % N != 0:
+    #    return LevelStructureResult(t=t)
 
     D_pi = t**2 - 4*q
     qf = JTQuadraticField(D_pi)
@@ -368,20 +576,52 @@ def process_t(p, n, t, N, k):
     NSS = Fraction(0)
     NC = Fraction(0)
     NP = 0
+    N_gauss = 0
+    N_eisen = 0
 
+      # this is the Hurwitz-Kronecker class number H(t^2-4q) that counts the number of isogeny classes with trace t, weighted by aut size, see Schoof 1987, Prop 2.2
+    
     if D_K != 0: # Imaginary Quadratic Case
+        
         is_SS = t % p == 0
+        
+        # Schoof: if q non square and ss t, then only maximal orders occur, the other conductors will be divisible by p. we can make early exit here
+        H_t = HKclass(D_K) if ( n % 2 == 1 and is_SS) else HKclass(D_pi)
+        
+
+        K = QuadraticField(D_K)
+
         for f in divisors(f_pi):
             # NON ALLOWED CONDUCTORS
+            D = D_K * f**2
+            
             if is_SS and f % p == 0:
+                print(f"{Colors.WARNING}Skipping conductor f={f}, D_K={D_K}, D={D} for supersingular trace t={t} divisible by p={p}{Colors.ENDC}")
                 continue
 
-            # js = qf.j_invariants(f, GF(q))
-            # print(f"t={t}, f={f}, D_K={D_K}, f_pi={f_pi}, N_pts={N_pts}, j_invariants={js}")
-            NP_ord = num_P(N, f_pi, f, N_pts, q)
-            if NP_ord > 0:
-                NC_ord = qf.h(f, q)
-                NSS += NC_ord if is_SS else 0
+            # discr of order
+            
+            is_maximal = f == 1
+            is_maximal_at_N = f % N != 0
+
+            js = []#qf.j_invariants(f, GF(q)) if (is_SS) else [] 
+
+            # SCHOOF LEMMA 4.8
+            '''if is_SS:
+                js = qf.j_invariants(f, GF(q)) if (is_SS) else []
+                for j in js:
+                    sage_curve = EllipticCurve(GF(q), j=j)
+                    if sage_curve:
+                        twists = sage_curve.twists()
+                        for et in twists:
+                            # if abs(et.trace_of_frobenius()) == abs(t):
+                            # cyclic if q equiv 4 is not 1
+                            print(
+                                f"\n p={p}, t={t}, D_K={D_K}, twist t={et.trace_of_frobenius()}, invariants={et.abelian_group().invariants()}, q equiv 4={q % 4}"
+                            )'''
+
+            NP_per_curve = num_P(N, f_pi, f, N_pts, q)
+            if True:
 
                 """
                 (2 if is_SS else 1)
@@ -393,26 +633,92 @@ def process_t(p, n, t, N, k):
                 """
                 aut_size = (AUT_SIZE[D_K] // (2 if is_SS else 1)) if ((qf.is_gaussian or qf.is_eisentein) and f == 1) else 2
 
-                curves_contrib += (
-                    Hk.eval(q, t, k)
-                    * NC_ord
-                    * NP_ord
-                    * Fraction(1, aut_size)
+                if qf.is_gaussian and f == 1:
+                    N_gauss = 1
+                elif qf.is_eisentein and f == 1:
+                    N_eisen = 1
+                    # if p == 19:
+                    #    print(f"Debug: Found Eisenstein prime p={p}, t={t}, D_K={D_K}, f_pi={f_pi}, N_pts={N_pts}, NC_ord={NC_ord}, NP_per_curve={NP_per_curve}, aut_size={aut_size}, isSS={is_SS}")
+
+                # Schoof
+                # note, this only happens for q square and SS curves?? - DOUBLE CHEKC
+                '''inert_scaling = 2 if legendre(D_K*f**2, p) == -1 else 1
+                clr = Colors.GREEN if is_SS else Colors.BOLD
+                if inert_scaling == 2:
+                    clr = Colors.WARNING
+                print(
+                    f"{clr}p={p}, t={t}, f={f}, D_K={D_K}, f_pi={f_pi}, N_pts={N_pts}, j_invariants={js}, j1728={1728 % p}, is_SS={is_SS}, aut_size={aut_size}, (-3/p)={legendre(-3, p)}, (-4/p)={legendre(-4, p)}, NC_ord={NC_ord}, NP_ord={NP_ord}, inert_scaling={inert_scaling}{Colors.ENDC}"
                 )
-                NP += NP_ord
-                NC += NC_ord 
+                
+                sage_curve = EllipticCurve(GF(q), j=0) if js else None
+                
+                if sage_curve:
+                    
+                    twists = sage_curve.twists()
+                    for et in twists:
+                        print(f"twist t={et.trace_of_frobenius()}, invariants={et.abelian_group().invariants()}")
+                        pts = [p for p in sage_curve.points() if p.order() == N]
+                        print(f"Points of order {N} on Sage's curve: {pts}, count={len(pts)}")'''
+
+                # NON weighted actual N(t) count from schoof
+
+                aut_size = AUT_SIZE[D_K]  if ( (qf.is_gaussian or qf.is_eisentein) and is_maximal ) else 2
+
+                inert_scaling = 2 if legendre(D, p) == -1 else 1
+                NE_ord_true = qf.h(f, q) * inert_scaling
+
+                # rescale NC by the aut size
+                NE_ord_weight = NE_ord_true * Fraction(1, aut_size)
+                # first count ACTUAL TOTAL points in this class order ( no aut weights)
+                NP_ord_weight = NP_per_curve * NE_ord_weight
+
+                curves_contrib += Hk.eval(q, t, k) * NP_ord_weight #later, only save the NP weight and avry hk eval over k
+
+                # for global isogeny class count
+                NC += NE_ord_weight
+                NP += NP_per_curve * NE_ord_true # we accum the ACTUAL nr of points
+                NSS += NE_ord_weight if is_SS else 0
+
+                # now HKclass should equal NC_ord =
+
+                js = qf.j_invariants(f, GF(q))
+                order_sage = K.order_of_conductor(f)
+                h_O = order_sage.class_number()
+
+                print(
+                    f"SS={is_SS}, p={p}, D_K={D_K}, D={D}, f={f}, t={t}, Huruwitz weighted={HKclass(D)}, NC={NC}, NE_ord_weight={NE_ord_weight}, NE_ord_true={NE_ord_true }, aut_size={aut_size}, js={len(js)}, h_O={h_O}, inert_scaling={inert_scaling}"
+                )
+                
+        if H_t != NC:
+            print(f"{Colors.FAIL}Discrepancy in class number for t={t}, D_K={D_K}: expected H({D_pi})={H_t}, got NC={NC}{Colors.ENDC}")
+        else:
+            print(f"{Colors.GREEN} Finished processing I({t}) : Expecting H({D_pi})={H_t}, got NC={NC}{Colors.ENDC}")
 
     else: # Quaterion Case
-        NP = num_P(N, f_pi, -1, N_pts, q) # set to -1 so we do NOT look at conductors, only weil pairing and valuation of N_pts
-        NC = Fraction(p - 1, 12) #quaternion_class_number(p, rescale_weights=True)
-        NSS = NC
-        # we have already weighted the special js with 1/3 and 1/2 in this count, since it might be a mix of generic and special
-        curves_contrib = (
-            Hk.eval(q, t, k)
-            * NC
-            * NP
-            * Fraction(1, 2)
+        # TODO: we know the invariants of the curve here.
+        # the other SS always has cyclic
+        # set to -1 so we do NOT look at conductors, only weil pairing and valuation of N_pts
+
+        NP_per_curve = num_P(N, f_pi, -1, N_pts, q)
+        NC = (
+            quaternion_class_number(p, rescale_weights=p > 3) if NP_per_curve > 0 else 0
         )
+        NSS = NC
+        # for p = 2,3 there is only one curve, but we have to adjust aut size, ie applies to this single curve, for p > 3 we might have different aut sizes, so we apply an offset weighting to the sum in quaternon H
+        aut_size = 2 if p > 3 else (24 if p == 2 else 12) # for p=2 we have 24 auts, for p=3 we have 12 auts, for p>3 we have 2 auts, this is the reason for the rescaling of the class number above, since we are not weighing by mass, we need to compensate here by dividing by the aut size, which end up in this simplified form
+        # we have already weighted the special js with 1/3 and 1/2 in this count, since it might be a mix of generic and special
+        curves_contrib = Hk.eval(q, t, k) * NC * NP_per_curve * Fraction(1, aut_size)
+        """print(
+            f"{Colors.HEADER}Quaternion case: p={p}, t={t}, D_K={D_K}, f_pi={f_pi}, N_pts={N_pts}, NC={NC}, NP={NP_per_curve}, aut_size={Fraction(1, aut_size)}, Hk.eval(q, t, k)={Hk.eval(q, t, k)}{Colors.ENDC}"
+        )
+        sage_curve = EllipticCurve(GF(q), j=1728)
+        if sage_curve:
+            twists = sage_curve.twists()
+            for et in twists:
+                # if abs(et.trace_of_frobenius()) == abs(t):
+                print(f"twist t={et.trace_of_frobenius()}, invariants={et.abelian_group().invariants()}")"""
+
+        NP = NP_per_curve * NC
 
     return LevelStructureResult(
         t=t,
@@ -422,20 +728,13 @@ def process_t(p, n, t, N, k):
         NC=NC,
         NP=NP,
         valid=True,
+        N_gauss=int(N_gauss),
+        N_eisen=int(N_eisen),
     )
 # q=31: diff=4, T=-104, sage_trace=-108, NC=13, NSS=13,  [q≡1 mod ell] [q≡1 mod 5]
 
 def run(p, n, N, k, compare=False, filter_q_level=False):
     q = p**n
-    '''SS_poly = supersingular_j_polynomial(p)
-    SS_poly_Fq = SS_poly.change_ring(GF(q))
-
-    ss_js = []
-    for r, m in SS_poly_Fq.roots(multiplicities=True):
-        for _ in range(m):
-            ss_js.append(r)
-
-    print(f"Supersingular j-invariants (except special js) in F_{q}: {ss_js}")'''
 
     SQRT_Q = math.isqrt(q)
     HB = math.isqrt(4*q)
@@ -445,16 +744,16 @@ def run(p, n, N, k, compare=False, filter_q_level=False):
     j1728_SS = p % 4 == 3
 
     partial_results = []
-    partial_results_2 = []
 
     # NOTE: for q squarefree, |int(sqrt(4q)=int(HB)| is NOT SS trace, hence we need the full range
 
     i_min = (q + 1 - HB + N - 1) // N
     i_max = (q + 1 + HB) // N
 
-    #ts_ = []
-
-    if False:
+    print(
+        f"{Colors.CYAN}Running for p={p}, n={n}, q={q}, HB={HB}, j0_SS={j0_SS}, j1728_SS={j1728_SS}, expected_NC={count_A1q(p, n)}{Colors.ENDC}"
+    )
+    if filter_q_level:
         for i in range(i_min, i_max + 1):
             t = q + 1 - i*N
             # print(f"Processing trace t={t} for F_{q} with Hasse bound {HB}")
@@ -471,51 +770,21 @@ def run(p, n, N, k, compare=False, filter_q_level=False):
             partial_results.append(process_t(p, n, t, N, k))
             partial_results.append(process_t(p, n, -t, N, k))
 
-    #ts_ = [r.t for r in partial_results if r.valid]
-    '''
-    0 7
-    6 7
-    25 7
-    3 2
-    5 2
-    9 2
-    14 2
-    8 -3
-    27 -3
-    11 -8
-    17 -8
-    13 -8
-    19 -8
-    '''
-
-    '''ts_2 = [r.t for r in partial_results if r.valid]
-    if len(ts_) != len(ts_2) or set(ts_) != set(ts_2):
-        print(
-            f"\n{Colors.FAIL}Warning: mismatch in expected vs processed traces, expected {(sorted(ts_))}, got {(sorted(ts_2))}{Colors.ENDC}"
-        )
-    else:
-        print(
-            f"\n{Colors.GREEN}COORECT PROCESSED TS: expected vs processed traces, expected {(sorted(ts_))}, got {(sorted(ts_2))}{Colors.ENDC}"
-        )'''
-
-    '''for t in range(1, HB + 1):
-        if t % p == 0:
-            continue
-        # N(t) = H(t^2-4q), t^2 < HB, p nmid t, Schoof
-        partial_results.append(process_t(p, n, t, N, k))
-        partial_results.append(process_t(p, n, -t, N, k))'''
-
-    '''for t in range(-HB, HB+1):
-        if t % p == 0:
-            continue
-        # N(t) = H(t^2-4q), t^2 < HB, p nmid t, Schoof
-        partial_results.append(process_t(p, n, t, N, k))'''
-
     # SUPERSINGULAR TRACES
     if n % 2 == 1: # CASE 1: q squarefree
         # N(0) = H(-4q), ie t = 0, Schoof
-        # print(f"N(t), t = 0 | H(-4q) | {pari(4*p).qfbhclassno()}")
+        print(f"\n{Colors.HEADER}N(t), t = 0 | H(-4p)=H{-4*p} | {pari(4*p).qfbhclassno()} mine H={JTQuadraticField.H(-4*p)}{Colors.ENDC}")
         partial_results.append(process_t(p, n, 0, N, k))
+
+        # Schoof Thm 4.2
+        if p == 2 or p == 3:
+            print(
+                f"\n{Colors.HEADER}N(t), t = sqrt(2q), sqrt(3q){Colors.ENDC}"
+            )
+            t = p**((n+1) // 2) # n is odd, this is integer pm sqrt(2q) and pm sqrt(3q) are SS traces
+            partial_results.append(process_t(p, n, t, N, k))
+            partial_results.append(process_t(p, n, -t, N, k))
+
     else:
         # Schoof special case for j depending wheter the are SS in p
         # TODO: add p = 2,3 also
@@ -535,27 +804,20 @@ def run(p, n, N, k, compare=False, filter_q_level=False):
         partial_results.append(process_t(p, n, -HB, N, k))
 
     # SUM TOTAL FROM PARTIALS
-    NSS = int(0)
-    for r in partial_results:
-        NSS += r.NSS
-    NSS = int(NSS)
+    NC = sum(r.NC for r in partial_results)
+    
+    print(f"\n{Colors.HEADER}Total NC={NC}, expected={count_A1q(p, n)}{Colors.ENDC}")
+    
+    NSS = sum(r.NSS for r in partial_results)
+    NP = sum(r.NP for r in partial_results)
+    N_eis = sum(r.N_eisen for r in partial_results)
+    N_gauss = sum(r.N_gauss for r in partial_results)
 
-    S_Gamma_Y = Fraction(0)
-    for r in partial_results:
-        S_Gamma_Y += r.val
+    S_Gamma_Y = sum(r.val for r in partial_results)
     if S_Gamma_Y.denominator != 1:
         print(f"{Colors.FAIL}Total S_Gamma_Y is not an integer: {S_Gamma_Y}{Colors.ENDC}")
 
     S_Gamma_Y = int(S_Gamma_Y)
-
-    NC = 0
-    for r in partial_results:
-        NC += float(r.NC)
-    NC = int(NC)
-    NP = 0
-    for r in partial_results:
-        NP += r.NP
-    NP = int(NP)
 
     cform = CuspForms(Gamma1(N), k + 2) if compare else None
     Tr_Tq = cform.hecke_operator(q).trace() if compare else 0
@@ -565,9 +827,9 @@ def run(p, n, N, k, compare=False, filter_q_level=False):
     # eis_H,k(q) = - SUM a_1(E)^(k-2)/#AutE - Tr(F_q | S([H,k+2]))
     # eis_H,k(q) = - S_Gamma_Y - Tr_Tq
     # this is the expected eis_H_k, we compute it now to be able to find a formula to compute this, and therefore compute Tr
-    
-    #S_Gamma_Y = 501120
-    
+
+    # S_Gamma_Y = 501120
+
     eis_H_k = - S_Gamma_Y - Tr_Tq
 
     phi_N = euler_phi(N)
@@ -581,7 +843,6 @@ def run(p, n, N, k, compare=False, filter_q_level=False):
     # if N == 4:
     #    cusp_gamma1_1 = (3 / 2) * (1 + sgn_k)
 
-    
     return HeckeResult(
         p=p,
         n=n,
@@ -601,6 +862,8 @@ def run(p, n, N, k, compare=False, filter_q_level=False):
         NSS=NSS,
         NC=NC,
         NP=NP,
+        N_eisen=N_eis,
+        N_gauss=N_gauss,
         j0_SS=j0_SS,
         j1728_SS=j1728_SS,
     )
@@ -608,7 +871,7 @@ def run(p, n, N, k, compare=False, filter_q_level=False):
 
 def print_result(result: HeckeResult):
     if result:
-        header = f" {'p':>6} {'n':>6} {'q≡N':>6} {'p≡N':>6} {'max_r':>6} {'NC':>6} {'NSS':>6} {'j0_SS':>10} {'j1728_SS':>10} {'q':>10} {'Computed':>20} {'Tr(T_q)':>20} {'eis':>10} {'cusp_est':>10} {'Error':>30}"
+        header = f" {'p^n':>6} {'n':>6} {'q≡N':>6} {'NC':>6} {'NSS':>6} {'j0_SS':>10} {'j1728_SS':>10} {'NEis':>6} {'NGauss':>6} {'q':>10} {'Computed':>20} {'Tr(T_q)':>20} {'eis':>10} {'cusp_est':>10} {'Error':>30}"
         print(header)
         print("-" * len(header))
         for r in results:
@@ -621,7 +884,7 @@ def print_result(result: HeckeResult):
             if r.p_equiv_N == 0:
                 clr = Colors.FAIL
             print(
-                f" {clr}{r.p:>6} {r.n:>6} {r.q_equiv_N:>6} {r.p_equiv_N:>6} {r.max_r:>6} {int(r.NC):>6} {float(r.NSS):>6.1f} {r.j0_SS:>10} {r.j1728_SS:>10} {(r.p**r.n):>10} {r.computed_sum:>20} {r.Tr:>20} {r.eis:>10} {r.error_1:>10} {fmt_factored(int(adjusted_val_1)):>30}{Colors.ENDC}"
+                f" {clr}{r.p:>6} {r.n:>6} {r.q_equiv_N:>6} {int(r.NC):>6} {float(r.NSS):>6.1f} {r.j0_SS:>10} {r.j1728_SS:>10} {r.N_eisen:>6} {r.N_gauss:>6} {(r.p**r.n):>10} {r.computed_sum:>20} {r.Tr:>20} {r.eis:>10} {r.error_1:>10} {fmt_factored(int(adjusted_val_1)):>30}{Colors.ENDC}"
             )
 
 if __name__ == "__main__":
@@ -678,8 +941,8 @@ if __name__ == "__main__":
     S_old = S.old_submodule()
     S_new = S.new_submodule()
     dim_S_old = S_old.dimension()
-    dim_S_new = S_new.dimension()
-    print(f"Dimension of M_{args.k+2}(Gamma1({args.N})): {dim_M} (Eisenstein: {dim_E}, Cusp: {dim_S}, Old: {dim_S_old}, New: {dim_S_new})\n")'''
+    dim_S_new = S_new.dimension()'''
+    #print(f"Dimension of M_{args.k+2}(Gamma1({args.N})): {dim_M} (Eisenstein: {dim_E}, Cusp: {dim_S}, Old: {dim_S_old}, New: {dim_S_new})\n")
 
     # from brute force
     # p=11, q=1331, q equiv ell = 5, T=195936, sage_T=227874, diff=-31938, NC=221, NSS=221, full_r=False
